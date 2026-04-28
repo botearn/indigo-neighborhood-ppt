@@ -10,9 +10,11 @@ def _set_key():
 
 def _mood_prompt(story: StoryUnit) -> str:
     return (
-        f"{story.signature.en}, {story.neighborhood} neighborhood, {story.city}, "
-        "cinematic street photography, dusk, warm ambient light, moody, "
-        "film grain, wide establishing shot, editorial"
+        f"{story.signature.en}, {story.neighborhood}, {story.city}, "
+        "Hotel Indigo editorial photography, soft luminous natural light, "
+        "muted teal and warm amber tones, deep navy shadows, ivory highlights, "
+        "water reflection, elegant architectural detail, high-end hotel lifestyle, "
+        "wide establishing shot, contemplative atmosphere, sophisticated, no people"
     )
 
 
@@ -21,7 +23,9 @@ def _beat_prompt(story: StoryUnit, beat_index: int) -> str:
     sensory = ", ".join(d.description for d in beat.sensory[:3])
     return (
         f"{beat.title}, {sensory}, {story.neighborhood}, {story.city}, "
-        "cinematic, intimate, moody, warm light, film grain, street level"
+        "Hotel Indigo editorial photography, soft luminous light, "
+        "muted teal and warm amber palette, elegant, intimate detail, "
+        "sophisticated lifestyle, high-end travel photography, no text"
     )
 
 

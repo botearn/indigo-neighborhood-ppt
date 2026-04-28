@@ -1,5 +1,5 @@
 import json
-import anthropic
+from openai import OpenAI
 from app.core.config import settings
 from app.core.models import StoryUnit, GenerateRequest, EditRequest
 
@@ -36,8 +36,8 @@ Return ONLY valid JSON matching this schema exactly:
 }"""
 
 
-def _client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+def _client() -> OpenAI:
+    return OpenAI(api_key=settings.openai_api_key)
 
 
 async def generate_story_unit(req: GenerateRequest) -> StoryUnit:
@@ -45,15 +45,16 @@ async def generate_story_unit(req: GenerateRequest) -> StoryUnit:
     hotel_ctx = f" near {req.hotel_name}" if req.hotel_name else ""
     user_msg = f"Generate a neighborhood story unit for: {req.neighborhood}, {req.city}{hotel_ctx}."
 
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_msg}],
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
     )
 
-    raw = response.content[0].text
-    data = json.loads(raw)
+    data = json.loads(response.choices[0].message.content)
     data["city"] = req.city
     data["neighborhood"] = req.neighborhood
     return StoryUnit(**data)
@@ -68,13 +69,14 @@ Instruction: {req.instruction}
 
 Apply the instruction and return the full updated story unit as JSON."""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_msg}],
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
     )
 
-    raw = response.content[0].text
-    data = json.loads(raw)
+    data = json.loads(response.choices[0].message.content)
     return StoryUnit(**data)
