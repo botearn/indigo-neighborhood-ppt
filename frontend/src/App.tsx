@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { StoryUnit } from './types'
-import { generate, edit, exportPpt } from './api'
+import { generate, edit, exportPpt, generateImages } from './api'
 
 const VERB_COLORS: Record<string, string> = {
   DO: '#e86a2f',
@@ -46,15 +46,22 @@ function InputPanel({ onGenerate }: { onGenerate: (city: string, neighborhood: s
   )
 }
 
-function StoryPreview({ story, onEdit, onExport }: {
+function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingImages }: {
   story: StoryUnit
   onEdit: (instruction: string) => void
   onExport: () => void
+  onGenerateImages: () => void
+  generatingImages: boolean
 }) {
   const [instruction, setInstruction] = useState('')
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
+      {story.mood_image_url && (
+        <div className="w-full h-48 rounded overflow-hidden">
+          <img src={story.mood_image_url} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
       <div className="border-l-2 border-[#c8a96e] pl-4">
         <div className="text-3xl font-light text-[#f5f5f0]">{story.signature.zh}</div>
         <div className="text-sm tracking-widest text-[#c8a96e] uppercase mt-1">{story.signature.en}</div>
@@ -68,6 +75,11 @@ function StoryPreview({ story, onEdit, onExport }: {
       <div className="flex flex-col gap-3">
         {story.beats.map((beat, i) => (
           <div key={i} className="bg-[#1a1a18] rounded p-4 border-l-2" style={{ borderColor: VERB_COLORS[beat.verb] }}>
+            {beat.image_url && (
+              <div className="w-full h-32 rounded overflow-hidden mb-3">
+                <img src={beat.image_url} alt="" className="w-full h-full object-cover" />
+              </div>
+            )}
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-mono font-bold" style={{ color: VERB_COLORS[beat.verb] }}>
                 {beat.verb}
@@ -107,12 +119,21 @@ function StoryPreview({ story, onEdit, onExport }: {
         </button>
       </div>
 
-      <button
-        onClick={onExport}
-        className="w-full bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] transition-colors cursor-pointer"
-      >
-        Export PPT
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={onGenerateImages}
+          disabled={generatingImages}
+          className="flex-1 bg-[#1a1a18] border border-[#2a2a28] text-[#f5f5f0] text-sm py-3 px-4 rounded hover:border-[#c8a96e] transition-colors cursor-pointer disabled:opacity-40"
+        >
+          {generatingImages ? 'Generating images...' : 'Generate Images'}
+        </button>
+        <button
+          onClick={onExport}
+          className="flex-1 bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] transition-colors cursor-pointer"
+        >
+          Export PPT
+        </button>
+      </div>
     </div>
   )
 }
@@ -120,6 +141,7 @@ function StoryPreview({ story, onEdit, onExport }: {
 export default function App() {
   const [story, setStory] = useState<StoryUnit | null>(null)
   const [loading, setLoading] = useState(false)
+  const [generatingImages, setGeneratingImages] = useState(false)
   const [error, setError] = useState('')
 
   async function handleGenerate(city: string, neighborhood: string) {
@@ -144,6 +166,19 @@ export default function App() {
       setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleGenerateImages() {
+    if (!story) return
+    setGeneratingImages(true)
+    setError('')
+    try {
+      setStory(await generateImages(story))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Image generation failed')
+    } finally {
+      setGeneratingImages(false)
     }
   }
 
@@ -172,7 +207,7 @@ export default function App() {
         )}
         {error && <div className="text-red-400 text-sm">{error}</div>}
         {!loading && story && (
-          <StoryPreview story={story} onEdit={handleEdit} onExport={handleExport} />
+          <StoryPreview story={story} onEdit={handleEdit} onExport={handleExport} onGenerateImages={handleGenerateImages} generatingImages={generatingImages} />
         )}
         {!loading && !story && !error && (
           <div className="text-[#2a2a28] text-sm mt-1">Enter a city and neighborhood to begin.</div>

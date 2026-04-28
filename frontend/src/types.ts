@@ -10,6 +10,7 @@ export interface Beat {
   copy: string
   verb: SixVerb
   sensory: SensoryDetail[]
+  image_url?: string
 }
 
 export interface Signature {
@@ -25,4 +26,5 @@ export interface StoryUnit {
   hook_line: string
   beats: Beat[]
   action_cue: string
+  mood_image_url?: string
 }

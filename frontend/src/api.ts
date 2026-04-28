@@ -22,6 +22,16 @@ export async function edit(storyUnit: StoryUnit, instruction: string): Promise<S
   return res.json()
 }
 
+export async function generateImages(storyUnit: StoryUnit): Promise<StoryUnit> {
+  const res = await fetch(`${BASE}/images`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(storyUnit),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function exportPpt(storyUnit: StoryUnit): Promise<void> {
   const res = await fetch(`${BASE}/export`, {
     method: 'POST',

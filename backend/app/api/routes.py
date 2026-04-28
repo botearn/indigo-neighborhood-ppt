@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from app.core.models import GenerateRequest, EditRequest, StoryUnit
-from app.services import generator, ppt_builder
+from app.services import generator, ppt_builder, image_generator
 
 router = APIRouter(prefix="/api")
 
@@ -18,6 +18,14 @@ async def generate(req: GenerateRequest):
 async def edit(req: EditRequest):
     try:
         return await generator.edit_story_unit(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/images", response_model=StoryUnit)
+async def images(story: StoryUnit):
+    try:
+        return await image_generator.generate_images(story)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

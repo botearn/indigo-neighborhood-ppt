@@ -27,6 +27,7 @@ class Beat(BaseModel):
     copy: str
     verb: SixVerb
     sensory: list[SensoryDetail]
+    image_url: Optional[str] = None
 
 
 class StoryUnit(BaseModel):
@@ -37,6 +38,7 @@ class StoryUnit(BaseModel):
     hook_line: str
     beats: list[Beat]
     action_cue: str
+    mood_image_url: Optional[str] = None
 
 
 class GenerateRequest(BaseModel):
