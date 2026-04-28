@@ -75,7 +75,7 @@ async def _gen_gemini(prompt: str) -> str:
 
 
 async def _search_unsplash(query: str) -> str:
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         r = await client.get(
             "https://api.unsplash.com/search/photos",
             headers={"Authorization": f"Client-ID {settings.unsplash_access_key}"},
@@ -91,7 +91,12 @@ async def _search_unsplash(query: str) -> str:
         if not results:
             return ""
         pick = random.choice(results)
-        return pick["urls"]["regular"]
+        img_url = pick["urls"]["regular"]
+        img_resp = await client.get(img_url)
+        img_resp.raise_for_status()
+        b64 = base64.b64encode(img_resp.content).decode("ascii")
+        mime = img_resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        return f"data:{mime};base64,{b64}"
 
 
 def _mood_query(story: StoryUnit) -> str:

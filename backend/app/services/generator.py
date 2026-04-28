@@ -1,5 +1,6 @@
 import json
 from openai import OpenAI
+from pydantic import ValidationError
 from app.core.config import settings
 from app.core.models import StoryUnit, GenerateRequest, EditRequest
 
@@ -61,25 +62,63 @@ def _models() -> tuple[str, str]:
     return "gpt-4o-mini", "gpt-4o"
 
 
+def _build_story(raw: str, overrides: dict | None = None) -> StoryUnit:
+    data = json.loads(raw)
+    if overrides:
+        data.update(overrides)
+    return StoryUnit(**data)
+
+
+def _complete_with_retry(
+    client: OpenAI,
+    model: str,
+    messages: list[dict],
+    overrides: dict | None = None,
+) -> StoryUnit:
+    convo = list(messages)
+    last_err: Exception | None = None
+    for _ in range(2):
+        response = client.chat.completions.create(
+            model=model,
+            response_format={"type": "json_object"},
+            messages=convo,
+        )
+        raw = response.choices[0].message.content or ""
+        try:
+            return _build_story(raw, overrides)
+        except (ValidationError, json.JSONDecodeError, ValueError) as e:
+            last_err = e
+            convo.append({"role": "assistant", "content": raw})
+            convo.append({
+                "role": "user",
+                "content": (
+                    "上一次返回的 JSON 不符合 schema，错误如下：\n"
+                    f"{e}\n\n"
+                    "请严格按 schema 返回完整 JSON，不要省略任何必需字段："
+                    "顶层 action_cue 必填；每个 beat 必须包含 title/copy/verb/sensory，"
+                    "sensory 至少 3 条且 type 限定 sound/smell/light/texture。"
+                    "只返回 JSON，不要任何解释。"
+                ),
+            })
+    assert last_err is not None
+    raise last_err
+
+
 async def generate_story_unit(req: GenerateRequest) -> StoryUnit:
     client = _client()
     gen_model, _ = _models()
     hotel_ctx = f" near {req.hotel_name}" if req.hotel_name else ""
     user_msg = f"Generate a neighborhood story unit for: {req.neighborhood}, {req.city}{hotel_ctx}."
 
-    response = client.chat.completions.create(
-        model=gen_model,
-        response_format={"type": "json_object"},
-        messages=[
+    return _complete_with_retry(
+        client,
+        gen_model,
+        [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg},
         ],
+        overrides={"city": req.city, "neighborhood": req.neighborhood},
     )
-
-    data = json.loads(response.choices[0].message.content)
-    data["city"] = req.city
-    data["neighborhood"] = req.neighborhood
-    return StoryUnit(**data)
 
 
 async def edit_story_unit(req: EditRequest) -> StoryUnit:
@@ -92,14 +131,11 @@ Instruction: {req.instruction}
 
 Apply the instruction and return the full updated story unit as JSON."""
 
-    response = client.chat.completions.create(
-        model=edit_model,
-        response_format={"type": "json_object"},
-        messages=[
+    return _complete_with_retry(
+        client,
+        edit_model,
+        [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg},
         ],
     )
-
-    data = json.loads(response.choices[0].message.content)
-    return StoryUnit(**data)
