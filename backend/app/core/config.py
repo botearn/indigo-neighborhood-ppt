@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     llm_provider: str = "openai"
     image_provider: str = "fal"
+    gemini_image_model: str = "gemini-2.0-flash-preview-image-generation"
     openai_api_key: str = ""
     deepseek_api_key: str = ""
     gemini_api_key: str = ""
