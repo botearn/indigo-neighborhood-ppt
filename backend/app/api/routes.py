@@ -1,7 +1,7 @@
 from urllib.parse import quote
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from app.core.models import GenerateRequest, EditRequest, StoryUnit
 from app.services import generator, ppt_builder, image_generator
 
@@ -39,15 +39,29 @@ async def images(story: StoryUnit):
 
 
 @router.post("/export")
-async def export(req: ExportRequest):
+async def export(request: Request):
     try:
-        data = ppt_builder.build_ppt_from_slides(req.slides)
-        filename = f"{req.neighborhood}_{req.city}.pptx"
-        encoded = quote(filename)
-        return Response(
-            content=data,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": f"attachment; filename=\"presentation.pptx\"; filename*=UTF-8''{encoded}"},
-        )
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON body")
+
+    try:
+        if isinstance(body, dict) and isinstance(body.get("slides"), list):
+            req = ExportRequest(**body)
+            data = ppt_builder.build_ppt_from_slides(req.slides)
+            filename = f"{req.neighborhood}_{req.city}.pptx"
+        else:
+            story = StoryUnit(**body)
+            data = ppt_builder.build_ppt_from_story(story)
+            filename = f"{story.neighborhood}_{story.city}.pptx"
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    encoded = quote(filename)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f"attachment; filename=\"presentation.pptx\"; filename*=UTF-8''{encoded}"},
+    )
