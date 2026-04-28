@@ -1,8 +1,15 @@
 from urllib.parse import quote
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 from app.core.models import GenerateRequest, EditRequest, StoryUnit
 from app.services import generator, ppt_builder, image_generator
+
+
+class ExportRequest(BaseModel):
+    neighborhood: str
+    city: str
+    slides: list[str]
 
 router = APIRouter(prefix="/api")
 
@@ -32,10 +39,10 @@ async def images(story: StoryUnit):
 
 
 @router.post("/export")
-async def export(story: StoryUnit):
+async def export(req: ExportRequest):
     try:
-        data = ppt_builder.build_ppt(story)
-        filename = f"{story.neighborhood}_{story.city}.pptx"
+        data = ppt_builder.build_ppt_from_slides(req.slides)
+        filename = f"{req.neighborhood}_{req.city}.pptx"
         encoded = quote(filename)
         return Response(
             content=data,

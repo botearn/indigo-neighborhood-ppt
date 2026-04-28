@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { toPng } from 'html-to-image'
 import type { StoryUnit } from './types'
 import { generate, edit, exportPpt, generateImages } from './api'
+import { SlideDeck } from './Slides'
 
 const VERB_COLORS: Record<string, string> = {
   DO: '#e86a2f',
@@ -46,12 +48,13 @@ function InputPanel({ onGenerate }: { onGenerate: (city: string, neighborhood: s
   )
 }
 
-function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingImages }: {
+function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingImages, exporting }: {
   story: StoryUnit
   onEdit: (instruction: string) => void
   onExport: () => void
   onGenerateImages: () => void
   generatingImages: boolean
+  exporting: boolean
 }) {
   const [instruction, setInstruction] = useState('')
 
@@ -132,9 +135,10 @@ function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingIma
         </button>
         <button
           onClick={onExport}
-          className="flex-1 bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] transition-colors cursor-pointer"
+          disabled={exporting}
+          className="flex-1 bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] transition-colors cursor-pointer disabled:opacity-40"
         >
-          Export PPT
+          {exporting ? 'Rendering slides...' : 'Export PPT'}
         </button>
       </div>
     </div>
@@ -145,7 +149,9 @@ export default function App() {
   const [story, setStory] = useState<StoryUnit | null>(null)
   const [loading, setLoading] = useState(false)
   const [generatingImages, setGeneratingImages] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  const deckRef = useRef<HTMLDivElement | null>(null)
 
   async function handleGenerate(city: string, neighborhood: string) {
     setLoading(true)
@@ -186,11 +192,22 @@ export default function App() {
   }
 
   async function handleExport() {
-    if (!story) return
+    if (!story || !deckRef.current) return
+    setExporting(true)
+    setError('')
     try {
-      await exportPpt(story)
+      await new Promise(r => setTimeout(r, 100))
+      const slideEls = Array.from(deckRef.current.querySelectorAll('[data-slide] > *')) as HTMLElement[]
+      const dataUrls: string[] = []
+      for (const el of slideEls) {
+        const url = await toPng(el, { cacheBust: true, pixelRatio: 1 })
+        dataUrls.push(url)
+      }
+      await exportPpt(story, dataUrls)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Export failed')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -210,12 +227,13 @@ export default function App() {
         )}
         {error && <div className="text-red-400 text-sm">{error}</div>}
         {!loading && story && (
-          <StoryPreview story={story} onEdit={handleEdit} onExport={handleExport} onGenerateImages={handleGenerateImages} generatingImages={generatingImages} />
+          <StoryPreview story={story} onEdit={handleEdit} onExport={handleExport} onGenerateImages={handleGenerateImages} generatingImages={generatingImages} exporting={exporting} />
         )}
         {!loading && !story && !error && (
           <div className="text-[#2a2a28] text-sm mt-1">Enter a city and neighborhood to begin.</div>
         )}
       </div>
+      {story && <SlideDeck story={story} deckRef={deckRef} />}
     </div>
   )
 }

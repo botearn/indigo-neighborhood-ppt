@@ -32,11 +32,15 @@ export async function generateImages(storyUnit: StoryUnit): Promise<StoryUnit> {
   return res.json()
 }
 
-export async function exportPpt(storyUnit: StoryUnit): Promise<void> {
+export async function exportPpt(storyUnit: StoryUnit, slideDataUrls: string[]): Promise<void> {
   const res = await fetch(`${BASE}/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(storyUnit),
+    body: JSON.stringify({
+      neighborhood: storyUnit.neighborhood,
+      city: storyUnit.city,
+      slides: slideDataUrls,
+    }),
   })
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
