@@ -1,9 +1,21 @@
 import os
 import base64
 import asyncio
+import random
+import httpx
 import fal_client
 from app.core.config import settings
 from app.core.models import StoryUnit
+
+
+VERB_KEYWORDS = {
+    "DO": "street life",
+    "SEE": "architecture detail",
+    "HEAR": "alley scene",
+    "TASTE": "local food",
+    "DRINK": "tea cafe",
+    "BUY": "market shop",
+}
 
 
 def _mood_prompt(story: StoryUnit) -> str:
@@ -62,6 +74,36 @@ async def _gen_gemini(prompt: str) -> str:
     return await asyncio.to_thread(_call)
 
 
+async def _search_unsplash(query: str) -> str:
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(
+            "https://api.unsplash.com/search/photos",
+            headers={"Authorization": f"Client-ID {settings.unsplash_access_key}"},
+            params={
+                "query": query,
+                "per_page": 10,
+                "orientation": "landscape",
+                "content_filter": "high",
+            },
+        )
+        r.raise_for_status()
+        results = r.json().get("results", [])
+        if not results:
+            return ""
+        pick = random.choice(results)
+        return pick["urls"]["regular"]
+
+
+def _mood_query(story: StoryUnit) -> str:
+    return f"{story.signature.en} {story.neighborhood} {story.city} editorial".strip()
+
+
+def _beat_query(story: StoryUnit, beat_index: int) -> str:
+    beat = story.beats[beat_index]
+    kw = VERB_KEYWORDS.get(beat.verb, "")
+    return f"{kw} {story.neighborhood} {story.city}".strip()
+
+
 async def _gen(prompt: str) -> str:
     if settings.image_provider == "gemini":
         return await _gen_gemini(prompt)
@@ -69,6 +111,12 @@ async def _gen(prompt: str) -> str:
 
 
 async def generate_images(story: StoryUnit) -> StoryUnit:
+    if settings.image_provider == "unsplash":
+        story.mood_image_url = await _search_unsplash(_mood_query(story)) or None
+        for i, beat in enumerate(story.beats):
+            beat.image_url = await _search_unsplash(_beat_query(story, i)) or None
+        return story
+
     story.mood_image_url = await _gen(_mood_prompt(story))
     for i, beat in enumerate(story.beats):
         beat.image_url = await _gen(_beat_prompt(story, i))

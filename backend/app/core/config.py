@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     gemini_api_key: str = ""
     fal_key: str = ""
+    unsplash_access_key: str = ""
     cors_origins: str = "http://localhost:5173"
     env: str = "development"
 
