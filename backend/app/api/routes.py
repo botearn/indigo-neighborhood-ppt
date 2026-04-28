@@ -1,3 +1,4 @@
+from urllib.parse import quote
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from app.core.models import GenerateRequest, EditRequest, StoryUnit
@@ -35,10 +36,11 @@ async def export(story: StoryUnit):
     try:
         data = ppt_builder.build_ppt(story)
         filename = f"{story.neighborhood}_{story.city}.pptx"
+        encoded = quote(filename)
         return Response(
             content=data,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": f"attachment; filename=\"presentation.pptx\"; filename*=UTF-8''{encoded}"},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
