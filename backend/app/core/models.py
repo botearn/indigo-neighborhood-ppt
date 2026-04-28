@@ -25,6 +25,7 @@ class SensoryDetail(BaseModel):
 class Beat(BaseModel):
     title: str
     copy: str
+    detail: str = ""
     verb: SixVerb
     sensory: list[SensoryDetail]
     image_url: Optional[str] = None

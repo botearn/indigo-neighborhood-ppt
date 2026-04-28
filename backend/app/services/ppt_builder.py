@@ -101,8 +101,11 @@ def build_ppt(story: StoryUnit) -> bytes:
                   36, WHITE, bold=True)
         _add_text(s, beat.copy, Inches(0.4), Inches(2.8), Inches(9), Inches(1.2),
                   20, WHITE)
+        if beat.detail:
+            _add_text(s, beat.detail, Inches(0.4), Inches(4.0), Inches(11), Inches(1.4),
+                      14, RGBColor(0xA8, 0xA8, 0xA0))
         sensory_text = "  ·  ".join(d.description for d in beat.sensory[:3])
-        _add_text(s, sensory_text, Inches(0.4), Inches(5.5), Inches(12), Inches(0.7),
+        _add_text(s, sensory_text, Inches(0.4), Inches(5.8), Inches(12), Inches(0.7),
                   12, MUTED)
 
     # Slide N+1 — Action Cue

@@ -8,6 +8,7 @@ export interface SensoryDetail {
 export interface Beat {
   title: string
   copy: string
+  detail?: string
   verb: SixVerb
   sensory: SensoryDetail[]
   image_url?: string

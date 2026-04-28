@@ -87,6 +87,9 @@ function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingIma
               <span className="text-sm font-medium text-[#f5f5f0]">{beat.title}</span>
             </div>
             <div className="text-sm text-[#c8c8c0]">{beat.copy}</div>
+            {beat.detail && (
+              <div className="text-sm text-[#a8a8a0] mt-2 leading-relaxed">{beat.detail}</div>
+            )}
             <div className="text-xs text-[#6b7280] mt-2">
               {beat.sensory.map(s => s.description).join('  ·  ')}
             </div>
