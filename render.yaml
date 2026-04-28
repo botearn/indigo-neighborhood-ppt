@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: indigo-ppt-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENV
+        value: production
+      - key: PORT
+        value: "8000"
+      - key: CORS_ORIGINS
+        sync: false
