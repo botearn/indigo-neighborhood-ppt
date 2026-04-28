@@ -1,0 +1,28 @@
+export type SixVerb = 'DO' | 'SEE' | 'HEAR' | 'TASTE' | 'DRINK' | 'BUY'
+
+export interface SensoryDetail {
+  type: string
+  description: string
+}
+
+export interface Beat {
+  title: string
+  copy: string
+  verb: SixVerb
+  sensory: SensoryDetail[]
+}
+
+export interface Signature {
+  zh: string
+  en: string
+}
+
+export interface StoryUnit {
+  city: string
+  neighborhood: string
+  signature: Signature
+  anchor: string
+  hook_line: string
+  beats: Beat[]
+  action_cue: string
+}
