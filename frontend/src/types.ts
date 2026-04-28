@@ -1,5 +1,13 @@
 export type SixVerb = 'DO' | 'SEE' | 'HEAR' | 'TASTE' | 'DRINK' | 'BUY'
 
+export type VisualIntent =
+  | 'image_dominant'
+  | 'typography_first'
+  | 'quiet_balance'
+  | 'dense_detail'
+  | 'atmospheric'
+  | 'editorial_break'
+
 export interface SensoryDetail {
   type: string
   description: string
@@ -11,6 +19,7 @@ export interface Beat {
   detail?: string
   verb: SixVerb
   sensory: SensoryDetail[]
+  visual_intent?: VisualIntent
   image_url?: string
 }
 

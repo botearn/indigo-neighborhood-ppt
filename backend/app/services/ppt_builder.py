@@ -7,7 +7,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.oxml.ns import qn
 from lxml import etree
-from app.core.models import StoryUnit, Beat
+from app.core.models import StoryUnit, Beat, VisualIntent
 
 
 SLIDE_W = Inches(13.333)
@@ -15,11 +15,14 @@ SLIDE_H = Inches(7.5)
 
 C_BG = RGBColor(0x0F, 0x11, 0x16)
 C_PANEL = RGBColor(0x13, 0x16, 0x1C)
+C_DARK = RGBColor(0x22, 0x1A, 0x12)
 C_CREAM = RGBColor(0xF5, 0xF0, 0xE6)
 C_AMBER = RGBColor(0xC8, 0xA9, 0x6E)
+C_AMBER_DIM = RGBColor(0x42, 0x30, 0x1C)
 C_BODY = RGBColor(0xE8, 0xE2, 0xD4)
 C_MUTED = RGBColor(0xA8, 0xA3, 0x97)
 C_DIM = RGBColor(0x6B, 0x72, 0x80)
+C_OVERLAY = RGBColor(0x08, 0x06, 0x04)
 
 
 def _decode_data_url(data_url: str) -> bytes:
@@ -121,6 +124,24 @@ def _picture(slide, url: str, l, t, w, h):
         return False
 
 
+def _vbar(slide, l, t, h, color=C_AMBER, w=Pt(2.5)):
+    s = slide.shapes.add_shape(1, l, t, int(w), h)
+    s.fill.solid()
+    s.fill.fore_color.rgb = color
+    s.line.fill.background()
+
+
+def _verb_eyebrow(slide, beat: Beat, index: int, total: int, l, t):
+    _txt(slide, f"{index:02d} / {total:02d}", l, t, Inches(2), Inches(0.32),
+         sz=10, color=C_DIM)
+    _txt(slide, beat.verb, l, t + Inches(0.42), Inches(2), Inches(0.4),
+         sz=12, bold=True, color=C_AMBER)
+
+
+def _sensory_line(beat: Beat) -> str:
+    return "  ·  ".join(d.description for d in beat.sensory)
+
+
 def _cover_slide(prs, story: StoryUnit):
     s = _blank(prs)
     _bg(s)
@@ -148,30 +169,176 @@ def _hook_slide(prs, story: StoryUnit):
          sz=18, color=C_MUTED)
 
 
+def _layout_image_dominant(s, beat: Beat, index: int, total: int):
+    """Full-bleed photo, gradient overlay pulling to bottom, text anchored low."""
+    if not (beat.image_url and _picture(s, beat.image_url, 0, 0, SLIDE_W, SLIDE_H)):
+        _box(s, 0, 0, SLIDE_W, SLIDE_H, C_PANEL)
+    _box(s, 0, Inches(2.8), SLIDE_W, Inches(1.4), C_OVERLAY, alpha=35000)
+    _box(s, 0, Inches(3.8), SLIDE_W, Inches(1.4), C_OVERLAY, alpha=55000)
+    _box(s, 0, Inches(4.8), SLIDE_W, Inches(2.7), C_OVERLAY, alpha=82000)
+    M = Inches(1.1)
+    _verb_eyebrow(s, beat, index, total, M, Inches(3.55))
+    _txt(s, beat.title, M, Inches(4.55), Inches(11), Inches(1.1),
+         sz=36, color=C_CREAM)
+    _rule(s, M, Inches(5.7), Inches(1.2))
+    _txt(s, beat.copy, M, Inches(5.95), Inches(11), Inches(0.6),
+         sz=18, color=C_BODY)
+    if beat.detail:
+        _txt(s, beat.detail, M, Inches(6.4), Inches(11), Inches(0.7),
+             sz=12, color=C_MUTED)
+    sensory = _sensory_line(beat)
+    if sensory:
+        _txt(s, sensory, M, Inches(7.05), Inches(11.5), Inches(0.4),
+             sz=9, color=C_DIM)
+
+
+def _layout_dense_detail(s, beat: Beat, index: int, total: int):
+    """Text left, framed inset image right (evidence window)."""
+    _bg(s)
+    M = Inches(1.1)
+    _verb_eyebrow(s, beat, index, total, M, Inches(1.35))
+    _txt(s, beat.title, M, Inches(2.35), Inches(5), Inches(1.0),
+         sz=34, color=C_CREAM)
+    _rule(s, M, Inches(3.4), Inches(1.2))
+    _txt(s, beat.copy, M, Inches(3.65), Inches(5), Inches(1.2),
+         sz=17, color=C_BODY)
+    if beat.detail:
+        _txt(s, beat.detail, M, Inches(5.0), Inches(5), Inches(1.6),
+             sz=12, color=C_MUTED)
+    sensory = _sensory_line(beat)
+    if sensory:
+        _txt(s, sensory, M, Inches(6.85), Inches(5.2), Inches(0.4),
+             sz=9, color=C_DIM)
+    IL, IT, IW, IH = Inches(6.8), Inches(0.6), Inches(6.0), Inches(6.3)
+    if not (beat.image_url and _picture(s, beat.image_url, IL, IT, IW, IH)):
+        _box(s, IL, IT, IW, IH, C_PANEL)
+    _rule(s, IL, IT, IW, thick=2.5)
+    _rule(s, IL, IT + IH - Pt(2.5), IW, thick=2.5)
+    _vbar(s, IL, IT, IH, w=Pt(2.5))
+    _vbar(s, IL + IW - Pt(2.5), IT, IH, w=Pt(2.5))
+
+
+def _layout_atmospheric(s, beat: Beat, index: int, total: int):
+    """Full bleed + giant dim verb watermark left + content right half."""
+    if not (beat.image_url and _picture(s, beat.image_url, 0, 0, SLIDE_W, SLIDE_H)):
+        _box(s, 0, 0, SLIDE_W, SLIDE_H, C_PANEL)
+    _box(s, 0, 0, SLIDE_W, SLIDE_H, C_OVERLAY, alpha=60000)
+    _txt(s, beat.verb, Inches(0.5), Inches(0.9), Inches(7.0), Inches(4.0),
+         sz=130, bold=True, color=C_AMBER_DIM)
+    RL, RW = Inches(7.4), Inches(5.3)
+    _verb_eyebrow(s, beat, index, total, RL, Inches(1.35))
+    _txt(s, beat.title, RL, Inches(2.35), RW, Inches(1.0),
+         sz=32, color=C_CREAM)
+    _rule(s, RL, Inches(3.4), Inches(1.4))
+    _txt(s, beat.copy, RL, Inches(3.65), RW, Inches(1.0),
+         sz=16, color=C_BODY)
+    if beat.detail:
+        _txt(s, beat.detail, RL, Inches(4.85), RW, Inches(1.6),
+             sz=12, color=C_MUTED)
+    sensory = _sensory_line(beat)
+    if sensory:
+        _txt(s, sensory, RL, Inches(6.7), RW, Inches(0.4),
+             sz=9, color=C_DIM)
+
+
+def _layout_editorial_break(s, beat: Beat, index: int, total: int):
+    """Horizontal split: image top, dark panel bottom, thick amber rule between."""
+    HSPLIT = Inches(4.05)
+    _bg(s)
+    if not (beat.image_url and _picture(s, beat.image_url, 0, 0, SLIDE_W, HSPLIT)):
+        _box(s, 0, 0, SLIDE_W, HSPLIT, C_PANEL)
+    _box(s, 0, HSPLIT, SLIDE_W, SLIDE_H - HSPLIT, C_DARK)
+    _rule(s, 0, HSPLIT - Pt(1.5), SLIDE_W, thick=3.0)
+    M = Inches(1.1)
+    _verb_eyebrow(s, beat, index, total, M, HSPLIT + Inches(0.35))
+    _txt(s, beat.title, M, HSPLIT + Inches(1.35), Inches(11), Inches(0.95),
+         sz=32, color=C_CREAM)
+    _txt(s, beat.copy, M, HSPLIT + Inches(2.3), Inches(11), Inches(0.7),
+         sz=16, color=C_BODY)
+    if beat.detail:
+        _txt(s, beat.detail, M, HSPLIT + Inches(3.05), Inches(11), Inches(1.0),
+             sz=12, color=C_MUTED)
+
+
+def _layout_typography_first(s, beat: Beat, index: int, total: int):
+    """Words carry it. Image absent or as small thumbnail; centered punchy type."""
+    _bg(s, C_DARK)
+    M = Inches(1.1)
+    _verb_eyebrow(s, beat, index, total, M, Inches(0.9))
+    # Optional small evidence thumbnail upper-right
+    if beat.image_url:
+        _picture(s, beat.image_url, Inches(10.3), Inches(0.7), Inches(2.4), Inches(1.6))
+    # Massive title centered
+    _txt(s, beat.title, Inches(0.8), Inches(2.4), Inches(11.7), Inches(1.6),
+         sz=60, color=C_CREAM, align=PP_ALIGN.CENTER)
+    _rule(s, Inches(6.17), Inches(4.15), Inches(1.0))
+    _txt(s, beat.copy, Inches(0.8), Inches(4.45), Inches(11.7), Inches(1.0),
+         sz=22, color=C_AMBER, align=PP_ALIGN.CENTER)
+    if beat.detail:
+        _txt(s, beat.detail, Inches(2.5), Inches(5.7), Inches(8.3), Inches(1.4),
+             sz=13, color=C_MUTED, align=PP_ALIGN.CENTER)
+    sensory = _sensory_line(beat)
+    if sensory:
+        _txt(s, sensory, Inches(1), Inches(7.0), Inches(11.3), Inches(0.4),
+             sz=9, color=C_DIM, align=PP_ALIGN.CENTER)
+
+
+def _layout_quiet_balance(s, beat: Beat, index: int, total: int):
+    """Vertical split: dark text panel left, raw image right with amber divider."""
+    _bg(s)
+    SPLIT = Inches(5.6)
+    if not (beat.image_url and _picture(s, beat.image_url, SPLIT, 0, SLIDE_W - SPLIT, SLIDE_H)):
+        _box(s, SPLIT, 0, SLIDE_W - SPLIT, SLIDE_H, C_PANEL)
+    _vbar(s, SPLIT - Pt(1), 0, SLIDE_H, color=C_AMBER, w=Pt(2))
+    M = Inches(1.1)
+    _txt(s, f"{index:02d}", M, Inches(0.65), Inches(2), Inches(0.9),
+         sz=40, bold=True, color=C_AMBER_DIM)
+    _txt(s, beat.verb, M, Inches(1.7), Inches(4), Inches(0.4),
+         sz=12, bold=True, color=C_AMBER)
+    _txt(s, beat.title, M, Inches(2.25), Inches(4.3), Inches(1.1),
+         sz=32, color=C_CREAM)
+    _rule(s, M, Inches(3.5), Inches(1.2))
+    _txt(s, beat.copy, M, Inches(3.75), Inches(4.3), Inches(1.0),
+         sz=16, color=C_BODY)
+    if beat.detail:
+        _txt(s, beat.detail, M, Inches(4.95), Inches(4.3), Inches(1.6),
+             sz=12, color=C_MUTED)
+    sensory = _sensory_line(beat)
+    if sensory:
+        _txt(s, sensory, M, Inches(6.85), Inches(4.4), Inches(0.4),
+             sz=9, color=C_DIM)
+
+
+_LAYOUTS = {
+    VisualIntent.IMAGE_DOMINANT: _layout_image_dominant,
+    VisualIntent.TYPOGRAPHY_FIRST: _layout_typography_first,
+    VisualIntent.QUIET_BALANCE: _layout_quiet_balance,
+    VisualIntent.DENSE_DETAIL: _layout_dense_detail,
+    VisualIntent.ATMOSPHERIC: _layout_atmospheric,
+    VisualIntent.EDITORIAL_BREAK: _layout_editorial_break,
+}
+
+
+def _infer_intent(beat: Beat) -> VisualIntent:
+    """Fallback when LLM omits visual_intent — derive from content signals."""
+    has_image = bool(beat.image_url)
+    detail_len = len(beat.detail or "")
+    sensory_count = len(beat.sensory)
+    if not has_image:
+        return VisualIntent.TYPOGRAPHY_FIRST
+    if detail_len >= 80:
+        return VisualIntent.DENSE_DETAIL
+    if sensory_count >= 4:
+        return VisualIntent.ATMOSPHERIC
+    return VisualIntent.IMAGE_DOMINANT
+
+
 def _beat_slide(prs, beat: Beat, index: int, total: int):
     s = _blank(prs)
     _bg(s)
-    has_img = bool(beat.image_url) and _picture(s, beat.image_url, 0, 0, Inches(6.7), SLIDE_H)
-    if not has_img:
-        _box(s, 0, 0, Inches(6.7), SLIDE_H, C_PANEL)
-    text_l = Inches(7.1)
-    text_w = Inches(5.9)
-    _txt(s, f"{index:02d} / {total:02d}", text_l, Inches(0.9), text_w, Inches(0.35),
-         sz=10, color=C_DIM)
-    _txt(s, beat.verb, text_l, Inches(1.35), text_w, Inches(0.4),
-         sz=12, bold=True, color=C_AMBER)
-    _txt(s, beat.title, text_l, Inches(1.95), text_w, Inches(1.1),
-         sz=34, color=C_CREAM)
-    _rule(s, text_l, Inches(3.2), Inches(0.6))
-    _txt(s, beat.copy, text_l, Inches(3.45), text_w, Inches(1.0),
-         sz=18, color=C_BODY)
-    if beat.detail:
-        _txt(s, beat.detail, text_l, Inches(4.7), text_w, Inches(1.8),
-             sz=13, color=C_MUTED)
-    sensory = "  ·  ".join(d.description for d in beat.sensory)
-    if sensory:
-        _txt(s, sensory, text_l, Inches(6.6), text_w, Inches(0.5),
-             sz=10, color=C_DIM)
+    intent = beat.visual_intent or _infer_intent(beat)
+    layout = _LAYOUTS.get(intent, _layout_quiet_balance)
+    layout(s, beat, index, total)
 
 
 def _action_slide(prs, story: StoryUnit):

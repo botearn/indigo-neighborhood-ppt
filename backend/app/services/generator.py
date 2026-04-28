@@ -30,6 +30,17 @@ SYSTEM_PROMPT = """你是 Hotel Indigo 的在地叙事作者。语调参考汪�
 - 每个 beat 至少3条 sensory，type 限定 sound/smell/light/texture
 - action_cue: 具体动作，禁止 打卡/探索/发现/体验/感受
 
+每个 beat 还要给一个 visual_intent，告诉排版这一格在 PPT 里应该看上去什么感觉（不是写什么、是什么气质）。六选一：
+- image_dominant：画面就是故事本身，文字只是注脚（适合一眼看懂的视觉场景：人在做事、物的特写）
+- typography_first：copy 本身就是这一击，图退到最小或没有（适合短促有力的金句、单点感官、动作号召）
+- quiet_balance：文字图片并重，沉静对话（适合细水长流的描述、有节制的观察）
+- dense_detail：detail 信息密度高，图作为"证据"嵌入框中（适合工艺/历史/人物背景这类肌理段落）
+- atmospheric：全幅图 + 重氛围 + verb 巨型水印（适合声音/气味/光线主导的感官沉浸）
+- editorial_break：杂志式上下分栏（适合叙事推进的转折、节奏切换）
+
+visual_intent 的选择要呼应内容本身——detail 长且讲工艺 → dense_detail；sensory 是声音/气味主导 → atmospheric；copy 是金句/号召 → typography_first。
+六个 beat 的 visual_intent 至少要有 3 种不同（避免节奏单一），不要 6 个全选 image_dominant。
+
 只返回严格匹配此 schema 的 JSON：
 {
   "city": "string",
@@ -43,7 +54,8 @@ SYSTEM_PROMPT = """你是 Hotel Indigo 的在地叙事作者。语调参考汪�
       "copy": "string",
       "detail": "string",
       "verb": "DO|SEE|HEAR|TASTE|DRINK|BUY",
-      "sensory": [{"type": "sound|smell|light|texture", "description": "string"}]
+      "sensory": [{"type": "sound|smell|light|texture", "description": "string"}],
+      "visual_intent": "image_dominant|typography_first|quiet_balance|dense_detail|atmospheric|editorial_break"
     }
   ],
   "action_cue": "string"
@@ -96,8 +108,10 @@ def _complete_with_retry(
                     f"{e}\n\n"
                     "请严格按 schema 返回完整 JSON，不要省略任何必需字段："
                     "beats 必须正好 6 个，DO/SEE/HEAR/TASTE/DRINK/BUY 每个 verb 各 1 个，缺一不可、不可重复；"
-                    "顶层 action_cue 必填；每个 beat 必须包含 title/copy/verb/sensory，"
-                    "sensory 至少 3 条且 type 限定 sound/smell/light/texture。"
+                    "顶层 action_cue 必填；每个 beat 必须包含 title/copy/verb/sensory/visual_intent，"
+                    "sensory 至少 3 条且 type 限定 sound/smell/light/texture；"
+                    "visual_intent 六选一(image_dominant/typography_first/quiet_balance/dense_detail/atmospheric/editorial_break)，"
+                    "六个 beat 至少 3 种不同 intent。"
                     "只返回 JSON，不要任何解释。"
                 ),
             })
