@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from typing import Optional
 
@@ -10,6 +10,9 @@ class SixVerb(str, Enum):
     TASTE = "TASTE"
     DRINK = "DRINK"
     BUY = "BUY"
+
+
+ALL_VERBS = {v.value for v in SixVerb}
 
 
 class Signature(BaseModel):
@@ -37,9 +40,21 @@ class StoryUnit(BaseModel):
     signature: Signature
     anchor: str
     hook_line: str
-    beats: list[Beat]
+    beats: list[Beat] = Field(min_length=6, max_length=6)
     action_cue: str
     mood_image_url: Optional[str] = None
+
+    @field_validator("beats")
+    @classmethod
+    def _all_six_verbs(cls, beats: list[Beat]) -> list[Beat]:
+        verbs = [b.verb.value for b in beats]
+        missing = ALL_VERBS - set(verbs)
+        if missing:
+            raise ValueError(f"missing verbs: {sorted(missing)}; need one beat per verb {sorted(ALL_VERBS)}")
+        if len(verbs) != len(set(verbs)):
+            dupes = sorted({v for v in verbs if verbs.count(v) > 1})
+            raise ValueError(f"duplicate verbs: {dupes}; each verb must appear exactly once")
+        return beats
 
 
 class GenerateRequest(BaseModel):

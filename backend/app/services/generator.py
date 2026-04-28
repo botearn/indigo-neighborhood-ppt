@@ -26,7 +26,7 @@ SYSTEM_PROMPT = """你是 Hotel Indigo 的在地叙事作者。语调参考汪�
 - signature.en: ≤6词
 - hook_line: ≤15字，把客人从酒店拽到街上
 - anchor: "酒店步行X分钟，XX路口向X"格式
-- beats: 3-5个，覆盖≥3种不同 verb
+- beats: 必须 6 个，DO / SEE / HEAR / TASTE / DRINK / BUY 每个 verb 各 1 个 beat（顺序可调，但缺一不可、不可重复）
 - 每个 beat 至少3条 sensory，type 限定 sound/smell/light/texture
 - action_cue: 具体动作，禁止 打卡/探索/发现/体验/感受
 
@@ -95,6 +95,7 @@ def _complete_with_retry(
                     "上一次返回的 JSON 不符合 schema，错误如下：\n"
                     f"{e}\n\n"
                     "请严格按 schema 返回完整 JSON，不要省略任何必需字段："
+                    "beats 必须正好 6 个，DO/SEE/HEAR/TASTE/DRINK/BUY 每个 verb 各 1 个，缺一不可、不可重复；"
                     "顶层 action_cue 必填；每个 beat 必须包含 title/copy/verb/sensory，"
                     "sensory 至少 3 条且 type 限定 sound/smell/light/texture。"
                     "只返回 JSON，不要任何解释。"
