@@ -1,6 +1,6 @@
 import type { StoryUnit } from './types'
 
-const BASE = '/api'
+const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ''}/api`
 
 export async function generate(city: string, neighborhood: string, hotelName?: string): Promise<StoryUnit> {
   const res = await fetch(`${BASE}/generate`, {
