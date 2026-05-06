@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     render_webhook_secret: str = ""
     render_api_key: str = ""
     vercel_webhook_secret: str = ""
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_verification_token: str = ""
+    feishu_api_base: str = "https://open.feishu.cn/open-apis"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
