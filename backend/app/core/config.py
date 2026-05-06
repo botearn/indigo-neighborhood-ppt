@@ -12,8 +12,13 @@ class Settings(BaseSettings):
     unsplash_access_key: str = ""
     cors_origins: str = "http://localhost:5173"
     env: str = "development"
+    feishu_webhook_url: str = ""
+    github_webhook_secret: str = ""
+    render_webhook_secret: str = ""
+    render_api_key: str = ""
+    vercel_webhook_secret: str = ""
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

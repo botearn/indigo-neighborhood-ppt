@@ -1,8 +1,8 @@
 import hashlib
 import hmac
-import httpx
 from fastapi import APIRouter, HTTPException, Request
 from app.core.config import settings
+from app.integrations.feishu import send_card
 
 router = APIRouter(prefix="/webhook")
 
@@ -14,14 +14,6 @@ def _verify_signature(body: bytes, signature: str) -> bool:
         settings.github_webhook_secret.encode(), body, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
-
-
-async def _send_feishu(card: dict):
-    if not settings.feishu_webhook_url:
-        raise HTTPException(status_code=500, detail="FEISHU_WEBHOOK_URL not configured")
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(settings.feishu_webhook_url, json=card, timeout=10)
-        resp.raise_for_status()
 
 
 def _card_push(payload: dict) -> dict:
@@ -143,5 +135,5 @@ async def github_webhook(request: Request):
     else:
         return {"status": "ignored"}
 
-    await _send_feishu(card)
+    await send_card(card)
     return {"status": "ok"}
