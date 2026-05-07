@@ -58,64 +58,85 @@ export function ImageStage({
         <button
           onClick={() => onSelect(moodSelected ? null : moodTarget)}
           className={`
-            block w-full aspect-video rounded overflow-hidden bg-[#1a1a18] mb-4 relative
-            cursor-pointer transition
+            block w-full text-left mb-4
+            rounded overflow-hidden transition
             ${moodSelected ? 'ring-2 ring-[#c8a96e]' : 'ring-0 hover:ring-1 hover:ring-[#c8a96e]/40'}
           `}
         >
-          {story.mood_image_url && !moodRegen ? (
-            <img
-              src={story.mood_image_url}
-              alt=""
-              className="w-full h-full object-cover animate-fade-rise"
-            />
-          ) : (
-            <Skeleton />
-          )}
-          <div className="absolute top-3 left-3 px-2 py-1 rounded bg-[#0f0f0f]/70 backdrop-blur-sm">
-            <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#c8a96e]">
-              Mood · Hero
-            </span>
+          <div className="aspect-video bg-[#1a1a18]">
+            {story.mood_image_url && !moodRegen ? (
+              <img
+                src={story.mood_image_url}
+                alt=""
+                className="w-full h-full object-cover animate-fade-rise"
+              />
+            ) : (
+              <Skeleton />
+            )}
+          </div>
+          <div className="px-5 py-4 bg-[#1a1a18]/60 backdrop-blur-sm border-t border-[#c8a96e]/20">
+            <div className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#c8a96e] mb-1.5">
+              {story.signature.en}
+            </div>
+            <div className="text-[24px] font-light text-[#f5f5f0] leading-tight">
+              {story.signature.zh}
+            </div>
+            <div className="text-[13px] text-[#a8a8a0] mt-2 leading-relaxed">{story.hook_line}</div>
           </div>
         </button>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 auto-rows-fr">
           {story.beats.map((beat, i) => {
             const target: ImageTarget = { type: 'beat', beatIndex: i }
             const sel = isSelected(selected, target)
             const regen = isSelected(regenerating, target)
+            const verbColor = VERB_COLORS[beat.verb]
             return (
               <button
-                key={i}
+                key={beat.verb}
                 onClick={() => onSelect(sel ? null : target)}
                 className={`
-                  aspect-[4/3] rounded overflow-hidden bg-[#1a1a18] relative cursor-pointer transition
+                  flex flex-col text-left
+                  rounded overflow-hidden transition
                   ${sel ? 'ring-2 ring-[#c8a96e]' : 'ring-0 hover:ring-1 hover:ring-[#c8a96e]/40'}
                 `}
               >
-                {beat.image_url && !regen ? (
-                  <img
-                    src={beat.image_url}
-                    alt=""
-                    className="w-full h-full object-cover animate-fade-rise"
-                  />
-                ) : (
-                  <Skeleton />
-                )}
-                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-[#0f0f0f]/95 via-[#0f0f0f]/60 to-transparent pointer-events-none text-left">
-                  <div className="flex items-center gap-2">
+                <div className="aspect-[4/3] bg-[#1a1a18]">
+                  {beat.image_url && !regen ? (
+                    <img
+                      src={beat.image_url}
+                      alt=""
+                      className="w-full h-full object-cover animate-fade-rise"
+                    />
+                  ) : (
+                    <Skeleton />
+                  )}
+                </div>
+                <div
+                  className="flex flex-col flex-1 px-4 py-3.5 bg-[#1a1a18]/60 backdrop-blur-sm border-t-2"
+                  style={{ borderColor: verbColor }}
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
                     <span
                       className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: VERB_COLORS[beat.verb] }}
+                      style={{ backgroundColor: verbColor }}
                     />
                     <span
                       className="font-mono text-[10px] font-medium tracking-[0.25em]"
-                      style={{ color: VERB_COLORS[beat.verb] }}
+                      style={{ color: verbColor }}
                     >
                       {beat.verb}
                     </span>
+                    <span className="text-[13px] text-[#f5f5f0] truncate">{beat.title}</span>
                   </div>
-                  <div className="text-[13px] text-[#f5f5f0] mt-1 leading-snug">{beat.title}</div>
+                  <div className="italic font-light text-[12px] text-[#c8c8c0] leading-relaxed line-clamp-2">
+                    “{beat.copy}”
+                  </div>
+                  {beat.sensory.length > 0 && (
+                    <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-[#6b7280] mt-auto pt-2.5">
+                      {beat.sensory.slice(0, 3).map(s => s.description).join('  ·  ')}
+                    </div>
+                  )}
                 </div>
               </button>
             )
