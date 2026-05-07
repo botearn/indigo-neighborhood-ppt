@@ -25,6 +25,16 @@ type Props = {
 }
 
 const DEFAULT_W = 380
+const MIN_W = 280
+const MAX_W = 600
+const MIN_H = 240
+const TOP_OFFSET = 80
+const BOTTOM_GAP = 16
+
+function initialHeight(): number {
+  if (typeof window === 'undefined') return 600
+  return window.innerHeight - TOP_OFFSET - BOTTOM_GAP
+}
 
 export function Concierge({
   messages,
@@ -38,8 +48,11 @@ export function Concierge({
 }: Props) {
   const [input, setInput] = useState('')
   const [pos, setPos] = useState({ x: 0, y: 0 })
+  const [size, setSize] = useState({ w: DEFAULT_W, h: initialHeight() })
   const dragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 })
+  const resizing = useRef<'left' | 'bottom' | 'corner' | null>(null)
+  const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
   const threadRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -64,8 +77,7 @@ export function Concierge({
     const dy = e.clientY - dragStart.current.y
     let nx = dragStart.current.posX + dx
     let ny = dragStart.current.posY + dy
-    // clamp: keep the panel reachable on screen
-    const maxLeft = window.innerWidth - DEFAULT_W - 32
+    const maxLeft = window.innerWidth - size.w - 32
     nx = Math.max(-maxLeft, Math.min(0, nx))
     ny = Math.max(-60, Math.min(window.innerHeight - 240, ny))
     setPos({ x: nx, y: ny })
@@ -75,17 +87,77 @@ export function Concierge({
     ;(e.currentTarget as Element).releasePointerCapture(e.pointerId)
   }
 
+  function startResize(mode: 'left' | 'bottom' | 'corner') {
+    return (e: React.PointerEvent) => {
+      e.stopPropagation()
+      resizing.current = mode
+      resizeStart.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h }
+      ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    }
+  }
+  function onResizeMove(e: React.PointerEvent) {
+    const mode = resizing.current
+    if (!mode) return
+    const dx = e.clientX - resizeStart.current.x
+    const dy = e.clientY - resizeStart.current.y
+    const next = { ...size }
+    if (mode === 'left' || mode === 'corner') {
+      // dragging left edge LEFT (dx negative) widens
+      const maxByViewport = window.innerWidth - 32
+      next.w = Math.max(MIN_W, Math.min(MAX_W, Math.min(maxByViewport, resizeStart.current.w - dx)))
+    }
+    if (mode === 'bottom' || mode === 'corner') {
+      const maxByViewport = window.innerHeight - TOP_OFFSET - BOTTOM_GAP
+      next.h = Math.max(MIN_H, Math.min(maxByViewport, resizeStart.current.h + dy))
+    }
+    setSize(next)
+  }
+  function onResizeUp(e: React.PointerEvent) {
+    resizing.current = null
+    ;(e.currentTarget as Element).releasePointerCapture(e.pointerId)
+  }
+
   return (
     <aside
       className="
-        fixed right-4 top-20 bottom-4 w-[380px] z-40
+        fixed right-4 top-20 z-40
         flex flex-col
         bg-[#0f0f0f]/70 backdrop-blur-2xl backdrop-saturate-150
         border border-[#c8a96e]/20 rounded-xl
         shadow-[0_8px_40px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(245,245,240,0.04)]
       "
-      style={{ transform: `translate3d(${pos.x}px, ${pos.y}px, 0)` }}
+      style={{
+        width: size.w,
+        height: size.h,
+        transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+      }}
     >
+      {/* resize handles */}
+      <div
+        onPointerDown={startResize('left')}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeUp}
+        className="absolute top-2 bottom-2 -left-1 w-2 cursor-ew-resize group z-50"
+      >
+        <div className="absolute inset-y-4 left-1/2 -translate-x-1/2 w-px bg-[#c8a96e]/0 group-hover:bg-[#c8a96e]/40 transition" />
+      </div>
+      <div
+        onPointerDown={startResize('bottom')}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeUp}
+        className="absolute left-2 right-2 -bottom-1 h-2 cursor-ns-resize group z-50"
+      >
+        <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-px bg-[#c8a96e]/0 group-hover:bg-[#c8a96e]/40 transition" />
+      </div>
+      <div
+        onPointerDown={startResize('corner')}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeUp}
+        className="absolute -bottom-1 -left-1 w-3 h-3 cursor-nesw-resize z-50"
+      >
+        <div className="absolute bottom-1 left-1 w-2 h-2 border-l border-b border-[#c8a96e]/0 hover:border-[#c8a96e]/60 transition rounded-bl" />
+      </div>
+
       <header
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
