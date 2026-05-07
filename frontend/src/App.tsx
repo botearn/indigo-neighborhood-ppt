@@ -1,281 +1,296 @@
-import { useState, useRef } from 'react'
-import { toPng } from 'html-to-image'
+import { useState } from 'react'
 import type { StoryUnit } from './types'
-import { generate, edit, exportPpt, generateImages } from './api'
-import { SlideDeck } from './Slides'
-import { MapPicker } from './MapPicker'
+import { generate, edit } from './api'
+import { MapPicker, forwardGeocode, reverseGeocode, type GeoResult } from './MapPicker'
+import { Concierge, type ConciergeMessage } from './Concierge'
+import { StepNav, type StepDef } from './StepNav'
+import { TextStage } from './stages/TextStage'
+import { StubStage } from './stages/StubStage'
 
-const VERB_COLORS: Record<string, string> = {
-  DO: '#e86a2f',
-  SEE: '#5b8db8',
-  HEAR: '#7bb58a',
-  TASTE: '#c8a96e',
-  DRINK: '#9b7bb5',
-  BUY: '#b57b7b',
+const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
+  { num: 1, label: '选址', sublabel: 'Pick a neighborhood' },
+  { num: 2, label: '文字', sublabel: 'Confirm the story' },
+  { num: 3, label: '图片', sublabel: 'Shape the imagery' },
+  { num: 4, label: '结构', sublabel: 'Arrange the deck' },
+  { num: 5, label: '导出', sublabel: 'Export PPT' },
+]
+
+function now() {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-type Step = 'pick' | 'generating' | 'preview'
-
-function GeneratingView({ city, neighborhood, onCancel }: { city: string; neighborhood: string; onCancel: () => void }) {
-  return (
-    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-12 h-12 mx-auto border-2 border-[#c8a96e] border-t-transparent rounded-full animate-spin mb-6" />
-        <div className="text-xs tracking-widest text-[#6b7280] uppercase mb-2">Generating</div>
-        <div className="text-3xl font-light text-[#f5f5f0] mb-1">{city} · {neighborhood}</div>
-        <div className="text-sm text-[#6b7280] mt-4">挖掘街区故事中，约 30 秒...</div>
-        <button
-          onClick={onCancel}
-          className="mt-8 text-xs text-[#6b7280] hover:text-[#c8a96e] underline cursor-pointer"
-        >
-          取消
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function StoryPreview({ story, onEdit, onExport, onGenerateImages, onBack, generatingImages, exporting, editing }: {
-  story: StoryUnit
-  onEdit: (instruction: string) => void
-  onExport: () => void
-  onGenerateImages: () => void
-  onBack: () => void
-  generatingImages: boolean
-  exporting: boolean
-  editing: boolean
-}) {
-  const [instruction, setInstruction] = useState('')
-
-  return (
-    <div className="flex flex-col gap-6 max-w-2xl">
-      <div className="flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="text-xs text-[#6b7280] hover:text-[#c8a96e] cursor-pointer"
-        >
-          ← 重新选择街区
-        </button>
-        <div className="text-xs text-[#6b7280]">{story.city} · {story.neighborhood}</div>
-      </div>
-
-      {story.mood_image_url && (
-        <div className="w-full h-48 rounded overflow-hidden">
-          <img src={story.mood_image_url} alt="" className="w-full h-full object-cover" />
-        </div>
-      )}
-      <div className="border-l-2 border-[#c8a96e] pl-4">
-        <div className="text-3xl font-light text-[#f5f5f0]">{story.signature.zh}</div>
-        <div className="text-sm tracking-widest text-[#c8a96e] uppercase mt-1">{story.signature.en}</div>
-      </div>
-
-      <div>
-        <div className="text-xs text-[#6b7280] mb-1">{story.anchor}</div>
-        <div className="text-lg text-[#f5f5f0]">{story.hook_line}</div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        {story.beats.map((beat, i) => (
-          <div key={i} className="bg-[#1a1a18] rounded p-4 border-l-2" style={{ borderColor: VERB_COLORS[beat.verb] }}>
-            {beat.image_url && (
-              <div className="w-full h-32 rounded overflow-hidden mb-3">
-                <img src={beat.image_url} alt="" className="w-full h-full object-cover" />
-              </div>
-            )}
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-mono font-bold" style={{ color: VERB_COLORS[beat.verb] }}>
-                {beat.verb}
-              </span>
-              <span className="text-sm font-medium text-[#f5f5f0]">{beat.title}</span>
-            </div>
-            <div className="text-sm text-[#c8c8c0]">{beat.copy}</div>
-            {beat.detail && (
-              <div className="text-sm text-[#a8a8a0] mt-2 leading-relaxed">{beat.detail}</div>
-            )}
-            <div className="text-xs text-[#6b7280] mt-2">
-              {beat.sensory.map(s => s.description).join('  ·  ')}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="text-sm text-[#c8a96e] border-t border-[#2a2a28] pt-4">
-        {story.action_cue}
-      </div>
-
-      <div className="flex gap-2">
-        <input
-          className="flex-1 bg-[#1a1a18] border border-[#2a2a28] rounded px-3 py-2 text-sm text-[#f5f5f0] placeholder-[#4b4b48] focus:outline-none focus:border-[#c8a96e]"
-          placeholder="告诉我要改什么..."
-          value={instruction}
-          onChange={e => setInstruction(e.target.value)}
-          disabled={editing}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && instruction) {
-              onEdit(instruction)
-              setInstruction('')
-            }
-          }}
-        />
-        <button
-          onClick={() => { if (instruction) { onEdit(instruction); setInstruction('') } }}
-          disabled={editing}
-          className="bg-[#1a1a18] border border-[#2a2a28] text-[#f5f5f0] text-sm px-4 py-2 rounded hover:border-[#c8a96e] cursor-pointer disabled:opacity-40"
-        >
-          {editing ? '...' : '调整'}
-        </button>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={onGenerateImages}
-          disabled={generatingImages}
-          className="flex-1 bg-[#1a1a18] border border-[#2a2a28] text-[#f5f5f0] text-sm py-3 px-4 rounded hover:border-[#c8a96e] cursor-pointer disabled:opacity-40"
-        >
-          {generatingImages ? '生成图片中...' : '生成图片'}
-        </button>
-        <button
-          onClick={onExport}
-          disabled={exporting}
-          className="flex-1 bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] cursor-pointer disabled:opacity-40"
-        >
-          {exporting ? '导出中...' : '导出 PPT'}
-        </button>
-      </div>
-    </div>
-  )
-}
+const INITIAL_VIEW = { longitude: 116.4074, latitude: 39.9042, zoom: 11 }
 
 export default function App() {
-  const [step, setStep] = useState<Step>('pick')
-  const [pendingLocation, setPendingLocation] = useState<{ city: string; neighborhood: string } | null>(null)
+  const [step, setStep] = useState(1)
+  const [viewState, setViewState] = useState(INITIAL_VIEW)
+  const [candidate, setCandidate] = useState<GeoResult | null>(null)
   const [story, setStory] = useState<StoryUnit | null>(null)
+  const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [generatingImages, setGeneratingImages] = useState(false)
-  const [exporting, setExporting] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [messages, setMessages] = useState<ConciergeMessage[]>([])
   const [error, setError] = useState('')
-  const deckRef = useRef<HTMLDivElement | null>(null)
 
-  async function handleConfirmLocation(city: string, neighborhood: string) {
-    setPendingLocation({ city, neighborhood })
-    setStep('generating')
+  function pushMessage(m: ConciergeMessage) {
+    setMessages(prev => [...prev, m])
+  }
+
+  function flyTo(r: GeoResult) {
+    setViewState({ longitude: r.longitude, latitude: r.latitude, zoom: 13 })
+  }
+
+  async function confirmLocation(r: GeoResult) {
+    setCandidate(null)
+    setStep(2)
     setError('')
+    setGenerating(true)
+    pushMessage({
+      role: 'agent',
+      content: `好。让我去走一趟 ${r.city} · ${r.neighborhood}，约 30 秒。`,
+      timestamp: now(),
+      step: 2,
+    })
     try {
-      const result = await generate(city, neighborhood)
+      const result = await generate(r.city, r.neighborhood)
       setStory(result)
-      setStep('preview')
+      pushMessage({
+        role: 'agent',
+        content: `回来了。我把这片街区的灵魂落在「${result.signature.zh}」上，给了 ${result.beats.length} 个 beat。看看哪里要调整？`,
+        timestamp: now(),
+        step: 2,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
-      setStep('pick')
-    }
-  }
-
-  async function handleEdit(instruction: string) {
-    if (!story) return
-    setEditing(true)
-    setError('')
-    try {
-      setStory(await edit(story, instruction))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong')
+      pushMessage({
+        role: 'agent',
+        content: `出了点问题：${e instanceof Error ? e.message : 'unknown'}。回到选址再来一次？`,
+        timestamp: now(),
+        step: 2,
+      })
     } finally {
-      setEditing(false)
+      setGenerating(false)
     }
   }
 
-  async function handleGenerateImages() {
-    if (!story) return
-    setGeneratingImages(true)
-    setError('')
+  async function handleMapClick(lng: number, lat: number) {
+    if (step !== 1) return
+    setSearching(true)
     try {
-      setStory(await generateImages(story))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Image generation failed')
-    } finally {
-      setGeneratingImages(false)
-    }
-  }
-
-  async function handleExport() {
-    if (!story || !deckRef.current) return
-    setExporting(true)
-    setError('')
-    try {
-      await new Promise(r => setTimeout(r, 100))
-      const slideEls = Array.from(deckRef.current.querySelectorAll('[data-slide] > *')) as HTMLElement[]
-      const dataUrls: string[] = []
-      for (const el of slideEls) {
-        const url = await toPng(el, { cacheBust: true, pixelRatio: 1 })
-        dataUrls.push(url)
+      const r = await reverseGeocode(lng, lat)
+      if (r) {
+        setCandidate(r)
+        flyTo(r)
+        pushMessage({
+          role: 'agent',
+          content: `看了一下：${r.city} · ${r.neighborhood}（${r.display}）。要用这里？`,
+          timestamp: now(),
+          step: 1,
+          action: { label: '用这里', onClick: () => confirmLocation(r) },
+        })
+      } else {
+        pushMessage({
+          role: 'agent',
+          content: '这个点没识别出来。换一处试试？',
+          timestamp: now(),
+          step: 1,
+        })
       }
-      await exportPpt(story, dataUrls)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Export failed')
+      pushMessage({
+        role: 'agent',
+        content: `识别失败：${e instanceof Error ? e.message : 'unknown'}`,
+        timestamp: now(),
+        step: 1,
+      })
     } finally {
-      setExporting(false)
+      setSearching(false)
     }
   }
 
-  function handleBackToPick() {
-    setStep('pick')
-    setStory(null)
-    setPendingLocation(null)
-    setError('')
+  async function handleSendInstruction(instruction: string) {
+    pushMessage({ role: 'user', content: instruction, timestamp: now(), step })
+
+    if (step === 1) {
+      setSearching(true)
+      try {
+        const r = await forwardGeocode(instruction)
+        if (r) {
+          setCandidate(r)
+          flyTo(r)
+          pushMessage({
+            role: 'agent',
+            content: `找到了：${r.city} · ${r.neighborhood}（${r.display}）。要用这里？`,
+            timestamp: now(),
+            step: 1,
+            action: { label: '用这里', onClick: () => confirmLocation(r) },
+          })
+        } else {
+          pushMessage({
+            role: 'agent',
+            content: '没找到这个地方。再具体一点？比如「上海 武康路」、「成都 玉林」。',
+            timestamp: now(),
+            step: 1,
+          })
+        }
+      } catch (e) {
+        pushMessage({
+          role: 'agent',
+          content: `搜索失败：${e instanceof Error ? e.message : 'unknown'}`,
+          timestamp: now(),
+          step: 1,
+        })
+      } finally {
+        setSearching(false)
+      }
+      return
+    }
+
+    if (step === 2) {
+      if (!story) return
+      setEditing(true)
+      try {
+        const updated = await edit(story, instruction)
+        setStory(updated)
+        pushMessage({
+          role: 'agent',
+          content: '改好了。看看这版？',
+          timestamp: now(),
+          step: 2,
+        })
+      } catch (e) {
+        pushMessage({
+          role: 'agent',
+          content: `没改成：${e instanceof Error ? e.message : 'unknown'}。换个说法再试？`,
+          timestamp: now(),
+          step: 2,
+        })
+      } finally {
+        setEditing(false)
+      }
+      return
+    }
+
+    pushMessage({
+      role: 'agent',
+      content: '这一步还在搭建（Phase 2）。先回到「文字」继续？',
+      timestamp: now(),
+      step,
+    })
   }
 
-  if (step === 'pick') {
-    return (
-      <div className="h-screen bg-[#0f0f0f] flex flex-col">
-        <header className="px-8 py-5 border-b border-[#1e1e1c] flex items-center justify-between">
-          <div>
-            <div className="text-xs tracking-widest text-[#6b7280] uppercase">Hotel Indigo</div>
-            <div className="text-base font-light text-[#f5f5f0] mt-0.5">Neighborhood Storytelling</div>
-          </div>
-          <div className="text-xs text-[#6b7280]">Step 1 / 3 · 选择街区</div>
-        </header>
-        <div className="flex-1 relative">
-          <MapPicker onConfirm={handleConfirmLocation} />
-        </div>
-        {error && (
-          <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-red-900/80 text-red-200 text-sm px-4 py-2 rounded">
-            {error}
+  function handleJump(target: number) {
+    if (target === 1) {
+      setStep(1)
+      setStory(null)
+      setCandidate(null)
+      setMessages([])
+      setError('')
+      return
+    }
+    setStep(target)
+  }
+
+  const stepDefs: StepDef[] = STEP_DEFS.map(s => ({
+    num: s.num,
+    label: s.label,
+    enabled: s.num === 1 || (story !== null && s.num <= 5),
+  }))
+
+  const conciergeStepLabel = STEP_DEFS[step - 1]?.sublabel ?? ''
+  const conciergeThinking = generating || editing || searching
+  const conciergeDisabled = generating
+
+  const stepPlaceholder =
+    step === 1
+      ? '比如「上海 徐汇」、「成都 玉林」'
+      : step === 2
+      ? '告诉我要怎么改文字…'
+      : 'Ask the concierge…'
+
+  const stepHint =
+    step === 1
+      ? '告诉我你想做哪里的 PPT。可以直接说「上海 武康路」、「我想要北京胡同的感觉」，或者直接点地图。'
+      : undefined
+
+  return (
+    <div className="h-screen flex flex-col bg-[#0f0f0f]">
+      <StepNav steps={stepDefs} current={step} onJump={handleJump} />
+
+      <main className="flex-1 relative overflow-hidden">
+        {step === 1 && (
+          <div className="absolute inset-0">
+            <MapPicker
+              viewState={viewState}
+              onViewStateChange={setViewState}
+              pin={candidate ? { longitude: candidate.longitude, latitude: candidate.latitude } : null}
+              onMapClick={handleMapClick}
+            />
           </div>
         )}
-      </div>
-    )
-  }
 
-  if (step === 'generating' && pendingLocation) {
-    return <GeneratingView city={pendingLocation.city} neighborhood={pendingLocation.neighborhood} onCancel={handleBackToPick} />
-  }
-
-  if (step === 'preview' && story) {
-    return (
-      <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
-        <header className="px-8 py-5 border-b border-[#1e1e1c] flex items-center justify-between">
-          <div>
-            <div className="text-xs tracking-widest text-[#6b7280] uppercase">Hotel Indigo</div>
-            <div className="text-base font-light text-[#f5f5f0] mt-0.5">Neighborhood Storytelling</div>
+        {step === 2 && (
+          <div className="absolute inset-0 pr-[412px]">
+            <TextStage
+              story={story}
+              loading={generating}
+              pendingLocation={candidate ? { city: candidate.city, neighborhood: candidate.neighborhood } : null}
+              onNext={() => setStep(3)}
+            />
           </div>
-          <div className="text-xs text-[#6b7280]">Step 3 / 3 · 预览与导出</div>
-        </header>
-        <div className="flex-1 p-8 overflow-y-auto">
-          {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
-          <StoryPreview
-            story={story}
-            onEdit={handleEdit}
-            onExport={handleExport}
-            onGenerateImages={handleGenerateImages}
-            onBack={handleBackToPick}
-            generatingImages={generatingImages}
-            exporting={exporting}
-            editing={editing}
-          />
-        </div>
-        <SlideDeck story={story} deckRef={deckRef} />
-      </div>
-    )
-  }
+        )}
 
-  return null
+        {step === 3 && (
+          <div className="absolute inset-0 pr-[412px]">
+            <StubStage
+              step={3}
+              title="确定图片"
+              description="基于你确认的文字，给每个 beat 生成图片，然后让 Concierge 帮你换风格、改 prompt、单张重生成。"
+              onBack={() => setStep(2)}
+            />
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="absolute inset-0 pr-[412px]">
+            <StubStage
+              step={4}
+              title="调整结构"
+              description="排序、删减、压缩、扩写。告诉 Concierge「压到 8 页」「合并第 2 和第 3 段」就行。"
+              onBack={() => setStep(3)}
+            />
+          </div>
+        )}
+
+        {step === 5 && (
+          <div className="absolute inset-0 pr-[412px]">
+            <StubStage
+              step={5}
+              title="导出"
+              description="确认无误后导出 .pptx。"
+              onBack={() => setStep(4)}
+            />
+          </div>
+        )}
+
+        <Concierge
+          messages={messages}
+          onSend={handleSendInstruction}
+          thinking={conciergeThinking}
+          disabled={conciergeDisabled}
+          currentStep={step}
+          stepLabel={conciergeStepLabel}
+          placeholder={stepPlaceholder}
+          emptyHint={stepHint}
+        />
+      </main>
+
+      {error && (
+        <div className="fixed bottom-6 left-6 bg-red-900/80 backdrop-blur text-red-200 text-sm px-4 py-2 rounded z-50">
+          {error}
+        </div>
+      )}
+    </div>
+  )
 }
