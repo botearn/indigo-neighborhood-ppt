@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { StoryUnit } from './types'
-import { generate, edit, generateImages } from './api'
+import { generate, edit, generateImages, regenerateImage, type ImageTarget } from './api'
 import { MapPicker, forwardGeocode, reverseGeocode, type GeoResult } from './MapPicker'
 import { MapBackdrop } from './MapBackdrop'
 import { Concierge, type ConciergeMessage } from './Concierge'
@@ -44,6 +44,8 @@ export default function App() {
   const [editing, setEditing] = useState(false)
   const [searching, setSearching] = useState(false)
   const [imagingPics, setImagingPics] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<ImageTarget | null>(null)
+  const [regeneratingImage, setRegeneratingImage] = useState<ImageTarget | null>(null)
   const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
   const [error, setError] = useState('')
 
@@ -243,6 +245,53 @@ export default function App() {
       return
     }
 
+    if (step === 3) {
+      if (!story) return
+      if (!selectedImage) {
+        pushMessage({
+          role: 'agent',
+          content: '先点一张图选中，再告诉我怎么改。',
+          timestamp: now(),
+          step: 3,
+        })
+        return
+      }
+      const target = selectedImage
+      const targetLabel =
+        target.type === 'mood' ? 'Mood · Hero' : story.beats[target.beatIndex].title
+      setRegeneratingImage(target)
+      try {
+        const newUrl = await regenerateImage(story, target, instruction, messages)
+        setStory(prev => {
+          if (!prev) return prev
+          if (target.type === 'mood') {
+            return { ...prev, mood_image_url: newUrl }
+          }
+          const beats = prev.beats.map((b, i) =>
+            i === target.beatIndex ? { ...b, image_url: newUrl } : b,
+          )
+          return { ...prev, beats }
+        })
+        setSelectedImage(null)
+        pushMessage({
+          role: 'agent',
+          content: `「${targetLabel}」换好了。看看这版？`,
+          timestamp: now(),
+          step: 3,
+        })
+      } catch (e) {
+        pushMessage({
+          role: 'agent',
+          content: `没改成：${e instanceof Error ? e.message : 'unknown'}。换个说法再试？`,
+          timestamp: now(),
+          step: 3,
+        })
+      } finally {
+        setRegeneratingImage(null)
+      }
+      return
+    }
+
     pushMessage({
       role: 'agent',
       content: '这一步还在搭建（Phase 2）。先回到「文字」继续？',
@@ -271,7 +320,8 @@ export default function App() {
   }))
 
   const conciergeStepLabel = STEP_DEFS[step - 1]?.sublabel ?? ''
-  const conciergeThinking = generating || editing || searching || imagingPics
+  const conciergeThinking =
+    generating || editing || searching || imagingPics || regeneratingImage !== null
   const conciergeDisabled = generating || imagingPics
 
   const stepPlaceholder =
@@ -287,7 +337,9 @@ export default function App() {
     step === 1
       ? '告诉我你想做哪里的 PPT。可以直接说「上海 武康路」、「我想要北京胡同的感觉」，或者直接点地图。'
       : step === 3
-      ? '7 张图正在按 Hotel Indigo 的调性出片。出来后告诉我哪张要换。'
+      ? selectedImage
+        ? '告诉我这张图要怎么改。比如「换成黄昏」、「再 cinematic 一些」、「人多一点」。'
+        : '点一张图选中，再让我改它。'
       : undefined
 
   return (
@@ -326,6 +378,9 @@ export default function App() {
             <ImageStage
               story={story}
               loading={imagingPics}
+              selected={selectedImage}
+              regenerating={regeneratingImage}
+              onSelect={setSelectedImage}
               onNext={() => setStep(4)}
               onBack={() => setStep(2)}
             />

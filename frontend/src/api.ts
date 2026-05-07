@@ -58,6 +58,30 @@ export async function generateImages(storyUnit: StoryUnit): Promise<StoryUnit> {
   return res.json()
 }
 
+export type ImageTarget = { type: 'mood' } | { type: 'beat'; beatIndex: number }
+
+export async function regenerateImage(
+  storyUnit: StoryUnit,
+  target: ImageTarget,
+  instruction?: string,
+  history?: ConciergeMessage[],
+): Promise<string> {
+  const res = await fetch(`${BASE}/images/single`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      story_unit: storyUnit,
+      target_type: target.type,
+      beat_index: target.type === 'beat' ? target.beatIndex : null,
+      instruction,
+      conversation_history: toHistory(history),
+    }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  const data = (await res.json()) as { image_url: string }
+  return data.image_url
+}
+
 export async function exportPpt(storyUnit: StoryUnit, slideDataUrls: string[]): Promise<void> {
   const res = await fetch(`${BASE}/export`, {
     method: 'POST',

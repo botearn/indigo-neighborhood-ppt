@@ -1,4 +1,5 @@
 import type { StoryUnit } from '../types'
+import type { ImageTarget } from '../api'
 
 const VERB_COLORS: Record<string, string> = {
   DO: '#e86a2f',
@@ -12,11 +13,33 @@ const VERB_COLORS: Record<string, string> = {
 type Props = {
   story: StoryUnit
   loading: boolean
+  selected: ImageTarget | null
+  regenerating: ImageTarget | null
+  onSelect: (target: ImageTarget | null) => void
   onNext: () => void
   onBack: () => void
 }
 
-export function ImageStage({ story, loading, onNext, onBack }: Props) {
+function isSelected(selected: ImageTarget | null, target: ImageTarget): boolean {
+  if (!selected) return false
+  if (selected.type !== target.type) return false
+  if (selected.type === 'mood') return true
+  return selected.beatIndex === (target as { type: 'beat'; beatIndex: number }).beatIndex
+}
+
+export function ImageStage({
+  story,
+  loading,
+  selected,
+  regenerating,
+  onSelect,
+  onNext,
+  onBack,
+}: Props) {
+  const moodTarget: ImageTarget = { type: 'mood' }
+  const moodSelected = isSelected(selected, moodTarget)
+  const moodRegen = isSelected(regenerating, moodTarget)
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-[820px] mx-auto px-12 py-14">
@@ -32,8 +55,15 @@ export function ImageStage({ story, loading, onNext, onBack }: Props) {
           </p>
         </div>
 
-        <div className="aspect-video rounded overflow-hidden bg-[#1a1a18] mb-3">
-          {story.mood_image_url ? (
+        <button
+          onClick={() => onSelect(moodSelected ? null : moodTarget)}
+          className={`
+            block w-full aspect-video rounded overflow-hidden bg-[#1a1a18] mb-4 relative
+            cursor-pointer transition
+            ${moodSelected ? 'ring-2 ring-[#c8a96e]' : 'ring-0 hover:ring-1 hover:ring-[#c8a96e]/40'}
+          `}
+        >
+          {story.mood_image_url && !moodRegen ? (
             <img
               src={story.mood_image_url}
               alt=""
@@ -42,40 +72,66 @@ export function ImageStage({ story, loading, onNext, onBack }: Props) {
           ) : (
             <Skeleton />
           )}
-        </div>
+          <div className="absolute top-3 left-3 px-2 py-1 rounded bg-[#0f0f0f]/70 backdrop-blur-sm">
+            <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#c8a96e]">
+              Mood · Hero
+            </span>
+          </div>
+        </button>
 
         <div className="grid grid-cols-2 gap-4">
-          {story.beats.map((beat, i) => (
-            <div
-              key={i}
-              className="aspect-[4/3] rounded overflow-hidden bg-[#1a1a18] relative group"
-            >
-              {beat.image_url ? (
-                <img
-                  src={beat.image_url}
-                  alt=""
-                  className="w-full h-full object-cover animate-fade-rise"
-                />
-              ) : (
-                <Skeleton />
-              )}
-              <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-[#0f0f0f]/95 via-[#0f0f0f]/60 to-transparent pointer-events-none">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: VERB_COLORS[beat.verb] }}
+          {story.beats.map((beat, i) => {
+            const target: ImageTarget = { type: 'beat', beatIndex: i }
+            const sel = isSelected(selected, target)
+            const regen = isSelected(regenerating, target)
+            return (
+              <button
+                key={i}
+                onClick={() => onSelect(sel ? null : target)}
+                className={`
+                  aspect-[4/3] rounded overflow-hidden bg-[#1a1a18] relative cursor-pointer transition
+                  ${sel ? 'ring-2 ring-[#c8a96e]' : 'ring-0 hover:ring-1 hover:ring-[#c8a96e]/40'}
+                `}
+              >
+                {beat.image_url && !regen ? (
+                  <img
+                    src={beat.image_url}
+                    alt=""
+                    className="w-full h-full object-cover animate-fade-rise"
                   />
-                  <span
-                    className="font-mono text-[10px] font-medium tracking-[0.25em]"
-                    style={{ color: VERB_COLORS[beat.verb] }}
-                  >
-                    {beat.verb}
-                  </span>
+                ) : (
+                  <Skeleton />
+                )}
+                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-[#0f0f0f]/95 via-[#0f0f0f]/60 to-transparent pointer-events-none text-left">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: VERB_COLORS[beat.verb] }}
+                    />
+                    <span
+                      className="font-mono text-[10px] font-medium tracking-[0.25em]"
+                      style={{ color: VERB_COLORS[beat.verb] }}
+                    >
+                      {beat.verb}
+                    </span>
+                  </div>
+                  <div className="text-[13px] text-[#f5f5f0] mt-1 leading-snug">{beat.title}</div>
                 </div>
-                <div className="text-[13px] text-[#f5f5f0] mt-1 leading-snug">{beat.title}</div>
-              </div>
-            </div>
-          ))}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mt-8 px-1">
+          {selected ? (
+            <p className="text-[13px] text-[#c8a96e] italic font-light leading-relaxed">
+              已选「{selected.type === 'mood' ? 'Mood · Hero' : story.beats[selected.beatIndex].title}」 — 在右边告诉 Concierge 怎么改这一张。再点一下取消选中。
+            </p>
+          ) : (
+            <p className="text-[13px] text-[#6b7280] leading-relaxed">
+              点任意一张图选中，再让 Concierge 改它。
+            </p>
+          )}
         </div>
 
         <div className="mt-12 pt-8 border-t border-[#2a2a28] flex items-center justify-between">
