@@ -225,7 +225,7 @@ export default function App() {
 
   if (step === 'pick') {
     return (
-      <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
+      <div className="h-screen bg-[#0f0f0f] flex flex-col">
         <header className="px-8 py-5 border-b border-[#1e1e1c] flex items-center justify-between">
           <div>
             <div className="text-xs tracking-widest text-[#6b7280] uppercase">Hotel Indigo</div>
