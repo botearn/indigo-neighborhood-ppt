@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { StoryUnit } from './types'
-import { generate, edit } from './api'
+import { generate, edit, generateImages } from './api'
 import { MapPicker, forwardGeocode, reverseGeocode, type GeoResult } from './MapPicker'
 import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
 import { TextStage } from './stages/TextStage'
+import { ImageStage } from './stages/ImageStage'
 import { StubStage } from './stages/StubStage'
 import { loadState, saveState, clearState } from './session'
 
@@ -41,6 +42,7 @@ export default function App() {
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [imagingPics, setImagingPics] = useState(false)
   const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
   const [error, setError] = useState('')
 
@@ -67,6 +69,43 @@ export default function App() {
   function pushMessage(m: ConciergeMessage) {
     setMessages(prev => [...prev, m])
   }
+
+  async function triggerImageGen(s: StoryUnit) {
+    setImagingPics(true)
+    pushMessage({
+      role: 'agent',
+      content: '正在为你拍 7 张图：1 张氛围图 + 6 个 beat。约 30–60 秒。',
+      timestamp: now(),
+      step: 3,
+    })
+    try {
+      const updated = await generateImages(s)
+      setStory(updated)
+      pushMessage({
+        role: 'agent',
+        content: '图都到了。看看哪张要换？（单张重生成 Phase 2 上线）',
+        timestamp: now(),
+        step: 3,
+      })
+    } catch (e) {
+      pushMessage({
+        role: 'agent',
+        content: `生图失败：${e instanceof Error ? e.message : 'unknown'}`,
+        timestamp: now(),
+        step: 3,
+      })
+    } finally {
+      setImagingPics(false)
+    }
+  }
+
+  useEffect(() => {
+    if (step !== 3 || !story || imagingPics) return
+    const hasAll = !!story.mood_image_url && story.beats.every(b => !!b.image_url)
+    if (hasAll) return
+    void triggerImageGen(story)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
 
   function flyTo(r: GeoResult) {
     setViewState({ longitude: r.longitude, latitude: r.latitude, zoom: 13 })
@@ -231,19 +270,23 @@ export default function App() {
   }))
 
   const conciergeStepLabel = STEP_DEFS[step - 1]?.sublabel ?? ''
-  const conciergeThinking = generating || editing || searching
-  const conciergeDisabled = generating
+  const conciergeThinking = generating || editing || searching || imagingPics
+  const conciergeDisabled = generating || imagingPics
 
   const stepPlaceholder =
     step === 1
       ? '比如「上海 徐汇」、「成都 玉林」'
       : step === 2
       ? '告诉我要怎么改文字…'
+      : step === 3
+      ? '比如「第 3 张换成黄昏」、「整体偏胶片质感」'
       : 'Ask the concierge…'
 
   const stepHint =
     step === 1
       ? '告诉我你想做哪里的 PPT。可以直接说「上海 武康路」、「我想要北京胡同的感觉」，或者直接点地图。'
+      : step === 3
+      ? '7 张图正在按 Hotel Indigo 的调性出片。出来后告诉我哪张要换。'
       : undefined
 
   return (
@@ -273,12 +316,12 @@ export default function App() {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 3 && story && (
           <div className="absolute inset-0 pr-[412px]">
-            <StubStage
-              step={3}
-              title="确定图片"
-              description="基于你确认的文字，给每个 beat 生成图片，然后让 Concierge 帮你换风格、改 prompt、单张重生成。"
+            <ImageStage
+              story={story}
+              loading={imagingPics}
+              onNext={() => setStep(4)}
               onBack={() => setStep(2)}
             />
           </div>
