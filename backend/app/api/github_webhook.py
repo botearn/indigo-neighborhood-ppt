@@ -16,12 +16,22 @@ def _verify_signature(body: bytes, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def _stat_col(content: str) -> dict:
+    return {
+        "tag": "column",
+        "width": "weighted",
+        "weight": 1,
+        "vertical_align": "center",
+        "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": content}}],
+    }
+
+
 def _card_push(payload: dict) -> dict:
-    repo_name = payload.get("repository", {}).get("name", "")
     pusher = payload.get("pusher", {}).get("name", "unknown")
     branch = payload.get("ref", "").replace("refs/heads/", "")
     commits = payload.get("commits", [])
     compare_url = payload.get("compare", "")
+    head_commit = payload.get("head_commit") or {}
     forced = payload.get("forced", False)
 
     head_msg = ""
@@ -29,16 +39,31 @@ def _card_push(payload: dict) -> dict:
         head_msg = commits[-1].get("message", "").splitlines()[0]
 
     n = len(commits)
-    suffix = ""
-    if n > 1:
-        suffix = f" (+{n - 1})"
+    suffix = f" (+{n - 1})" if n > 1 else ""
+
+    files: set[str] = set()
+    for c in commits:
+        files.update(c.get("added", []))
+        files.update(c.get("modified", []))
+        files.update(c.get("removed", []))
+    n_files = len(files)
 
     title_prefix = "⚠️ Force-push" if forced else "🚀"
-    title = f"{title_prefix} {repo_name}/{branch} · {head_msg}{suffix}" if head_msg else f"{title_prefix} {repo_name}/{branch} · {n} commits"
+    title = f"{title_prefix} {branch} · {head_msg}{suffix}" if head_msg else f"{title_prefix} {branch} · {n} commits"
     if len(title) > 90:
         title = title[:87] + "..."
 
-    elements: list = []
+    elements: list = [{
+        "tag": "column_set",
+        "flex_mode": "stretch",
+        "horizontal_spacing": "default",
+        "columns": [
+            _stat_col(f"👤 **{pusher}**"),
+            _stat_col(f"📦 {n} commits"),
+            _stat_col(f"⌁ {n_files} files"),
+        ],
+    }]
+
     if n > 1:
         commit_lines = "\n".join(
             f"· `{c['id'][:7]}` {c['message'].splitlines()[0]}" for c in commits[-5:][::-1]
@@ -49,20 +74,24 @@ def _card_push(payload: dict) -> dict:
 
     elements.append({
         "tag": "note",
-        "elements": [{"tag": "lark_md", "content": f"由 **{pusher}** 推送 · `{branch}`"}],
+        "elements": [{"tag": "lark_md", "content": f"pushed to `{branch}`"}],
     })
 
-    elements.append({
-        "tag": "action",
-        "actions": [
-            {
-                "tag": "button",
-                "text": {"tag": "plain_text", "content": "查看对比"},
-                "url": compare_url,
-                "type": "default",
-            }
-        ],
-    })
+    actions = [{
+        "tag": "button",
+        "text": {"tag": "plain_text", "content": "查看对比"},
+        "url": compare_url,
+        "type": "primary",
+    }]
+    head_url = head_commit.get("url")
+    if head_url:
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "最新提交"},
+            "url": head_url,
+            "type": "default",
+        })
+    elements.append({"tag": "action", "actions": actions})
 
     return {
         "msg_type": "interactive",
@@ -79,18 +108,22 @@ def _card_push(payload: dict) -> dict:
 def _card_pr(payload: dict) -> dict:
     action = payload.get("action", "")
     pr = payload.get("pull_request", {})
-    repo_name = payload.get("repository", {}).get("name", "")
     pr_title = pr.get("title", "")
     pr_number = pr.get("number", "")
     user = pr.get("user", {}).get("login", "unknown")
     url = pr.get("html_url", "")
     base = pr.get("base", {}).get("ref", "")
     head = pr.get("head", {}).get("ref", "")
+    additions = pr.get("additions", 0)
+    deletions = pr.get("deletions", 0)
+    changed_files = pr.get("changed_files", 0)
+    comments = pr.get("comments", 0) + pr.get("review_comments", 0)
+    reviewers = [r.get("login", "") for r in pr.get("requested_reviewers", []) if r.get("login")]
 
     icon, verb, template = {
         "opened": ("📬", "opened", "orange"),
         "reopened": ("📬", "reopened", "orange"),
-        "review_requested": ("👀", "review requested", "yellow"),
+        "review_requested": ("👀", "review requested", "orange"),
     }.get(action, ("🔀", action, "grey"))
 
     if action == "closed":
@@ -99,9 +132,56 @@ def _card_pr(payload: dict) -> dict:
         else:
             icon, verb, template = "🚫", "closed", "grey"
 
-    title = f"{icon} {repo_name} #{pr_number} {verb} · {pr_title}"
+    title = f"{icon} #{pr_number} {verb} · {pr_title}"
     if len(title) > 90:
         title = title[:87] + "..."
+
+    elements: list = [
+        {
+            "tag": "column_set",
+            "flex_mode": "stretch",
+            "horizontal_spacing": "default",
+            "columns": [
+                _stat_col(f"👤 **{user}**"),
+                _stat_col(f"`{head}` → `{base}`"),
+            ],
+        },
+        {
+            "tag": "column_set",
+            "flex_mode": "stretch",
+            "horizontal_spacing": "default",
+            "columns": [
+                _stat_col(f"💬 {comments}"),
+                _stat_col(f"📄 {changed_files} files"),
+                _stat_col(f"<font color='green'>+{additions}</font> / <font color='red'>−{deletions}</font>"),
+            ],
+        },
+    ]
+
+    if reviewers:
+        mentions = " ".join(f"@{r}" for r in reviewers)
+        elements.append({
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": f"**Reviewers:** {mentions}"},
+        })
+
+    elements.append({
+        "tag": "action",
+        "actions": [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "查看 PR"},
+                "url": url,
+                "type": "primary",
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "Files changed"},
+                "url": f"{url}/files",
+                "type": "default",
+            },
+        ],
+    })
 
     return {
         "msg_type": "interactive",
@@ -110,23 +190,7 @@ def _card_pr(payload: dict) -> dict:
                 "title": {"tag": "plain_text", "content": title},
                 "template": template,
             },
-            "elements": [
-                {
-                    "tag": "note",
-                    "elements": [{"tag": "lark_md", "content": f"**{user}** · `{head}` → `{base}`"}],
-                },
-                {
-                    "tag": "action",
-                    "actions": [
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": "查看 PR"},
-                            "url": url,
-                            "type": "default",
-                        }
-                    ],
-                },
-            ],
+            "elements": elements,
         },
     }
 
