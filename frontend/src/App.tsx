@@ -3,6 +3,7 @@ import { toPng } from 'html-to-image'
 import type { StoryUnit } from './types'
 import { generate, edit, exportPpt, generateImages } from './api'
 import { SlideDeck } from './Slides'
+import { MapPicker } from './MapPicker'
 
 const VERB_COLORS: Record<string, string> = {
   DO: '#e86a2f',
@@ -13,53 +14,51 @@ const VERB_COLORS: Record<string, string> = {
   BUY: '#b57b7b',
 }
 
-function InputPanel({ onGenerate }: { onGenerate: (city: string, neighborhood: string) => void }) {
-  const [city, setCity] = useState('')
-  const [neighborhood, setNeighborhood] = useState('')
+type Step = 'pick' | 'generating' | 'preview'
 
+function GeneratingView({ city, neighborhood, onCancel }: { city: string; neighborhood: string; onCancel: () => void }) {
   return (
-    <div className="flex flex-col gap-4">
-      <div className="text-xs tracking-widest text-[#6b7280] uppercase">Hotel Indigo</div>
-      <h1 className="text-2xl font-light text-[#f5f5f0] leading-tight">
-        Neighborhood<br />Storytelling
-      </h1>
-      <div className="flex flex-col gap-3 mt-4">
-        <input
-          className="bg-[#1a1a18] border border-[#2a2a28] rounded px-4 py-3 text-sm text-[#f5f5f0] placeholder-[#4b4b48] focus:outline-none focus:border-[#c8a96e] transition-colors"
-          placeholder="City"
-          value={city}
-          onChange={e => setCity(e.target.value)}
-        />
-        <input
-          className="bg-[#1a1a18] border border-[#2a2a28] rounded px-4 py-3 text-sm text-[#f5f5f0] placeholder-[#4b4b48] focus:outline-none focus:border-[#c8a96e] transition-colors"
-          placeholder="Neighborhood"
-          value={neighborhood}
-          onChange={e => setNeighborhood(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && city && neighborhood && onGenerate(city, neighborhood)}
-        />
+    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-12 h-12 mx-auto border-2 border-[#c8a96e] border-t-transparent rounded-full animate-spin mb-6" />
+        <div className="text-xs tracking-widest text-[#6b7280] uppercase mb-2">Generating</div>
+        <div className="text-3xl font-light text-[#f5f5f0] mb-1">{city} · {neighborhood}</div>
+        <div className="text-sm text-[#6b7280] mt-4">挖掘街区故事中，约 30 秒...</div>
         <button
-          onClick={() => city && neighborhood && onGenerate(city, neighborhood)}
-          className="mt-2 bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] transition-colors cursor-pointer"
+          onClick={onCancel}
+          className="mt-8 text-xs text-[#6b7280] hover:text-[#c8a96e] underline cursor-pointer"
         >
-          Generate
+          取消
         </button>
       </div>
     </div>
   )
 }
 
-function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingImages, exporting }: {
+function StoryPreview({ story, onEdit, onExport, onGenerateImages, onBack, generatingImages, exporting, editing }: {
   story: StoryUnit
   onEdit: (instruction: string) => void
   onExport: () => void
   onGenerateImages: () => void
+  onBack: () => void
   generatingImages: boolean
   exporting: boolean
+  editing: boolean
 }) {
   const [instruction, setInstruction] = useState('')
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className="text-xs text-[#6b7280] hover:text-[#c8a96e] cursor-pointer"
+        >
+          ← 重新选择街区
+        </button>
+        <div className="text-xs text-[#6b7280]">{story.city} · {story.neighborhood}</div>
+      </div>
+
       {story.mood_image_url && (
         <div className="w-full h-48 rounded overflow-hidden">
           <img src={story.mood_image_url} alt="" className="w-full h-full object-cover" />
@@ -106,10 +105,11 @@ function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingIma
 
       <div className="flex gap-2">
         <input
-          className="flex-1 bg-[#1a1a18] border border-[#2a2a28] rounded px-3 py-2 text-sm text-[#f5f5f0] placeholder-[#4b4b48] focus:outline-none focus:border-[#c8a96e] transition-colors"
-          placeholder="Tell me what to change..."
+          className="flex-1 bg-[#1a1a18] border border-[#2a2a28] rounded px-3 py-2 text-sm text-[#f5f5f0] placeholder-[#4b4b48] focus:outline-none focus:border-[#c8a96e]"
+          placeholder="告诉我要改什么..."
           value={instruction}
           onChange={e => setInstruction(e.target.value)}
+          disabled={editing}
           onKeyDown={e => {
             if (e.key === 'Enter' && instruction) {
               onEdit(instruction)
@@ -119,9 +119,10 @@ function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingIma
         />
         <button
           onClick={() => { if (instruction) { onEdit(instruction); setInstruction('') } }}
-          className="bg-[#1a1a18] border border-[#2a2a28] text-[#f5f5f0] text-sm px-4 py-2 rounded hover:border-[#c8a96e] transition-colors cursor-pointer"
+          disabled={editing}
+          className="bg-[#1a1a18] border border-[#2a2a28] text-[#f5f5f0] text-sm px-4 py-2 rounded hover:border-[#c8a96e] cursor-pointer disabled:opacity-40"
         >
-          Edit
+          {editing ? '...' : '调整'}
         </button>
       </div>
 
@@ -129,16 +130,16 @@ function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingIma
         <button
           onClick={onGenerateImages}
           disabled={generatingImages}
-          className="flex-1 bg-[#1a1a18] border border-[#2a2a28] text-[#f5f5f0] text-sm py-3 px-4 rounded hover:border-[#c8a96e] transition-colors cursor-pointer disabled:opacity-40"
+          className="flex-1 bg-[#1a1a18] border border-[#2a2a28] text-[#f5f5f0] text-sm py-3 px-4 rounded hover:border-[#c8a96e] cursor-pointer disabled:opacity-40"
         >
-          {generatingImages ? 'Generating images...' : 'Generate Images'}
+          {generatingImages ? '生成图片中...' : '生成图片'}
         </button>
         <button
           onClick={onExport}
           disabled={exporting}
-          className="flex-1 bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] transition-colors cursor-pointer disabled:opacity-40"
+          className="flex-1 bg-[#c8a96e] text-[#0f0f0f] text-sm font-medium py-3 px-4 rounded hover:bg-[#d4ba82] cursor-pointer disabled:opacity-40"
         >
-          {exporting ? 'Rendering slides...' : 'Export PPT'}
+          {exporting ? '导出中...' : '导出 PPT'}
         </button>
       </div>
     </div>
@@ -146,35 +147,39 @@ function StoryPreview({ story, onEdit, onExport, onGenerateImages, generatingIma
 }
 
 export default function App() {
+  const [step, setStep] = useState<Step>('pick')
+  const [pendingLocation, setPendingLocation] = useState<{ city: string; neighborhood: string } | null>(null)
   const [story, setStory] = useState<StoryUnit | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [generatingImages, setGeneratingImages] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const deckRef = useRef<HTMLDivElement | null>(null)
 
-  async function handleGenerate(city: string, neighborhood: string) {
-    setLoading(true)
+  async function handleConfirmLocation(city: string, neighborhood: string) {
+    setPendingLocation({ city, neighborhood })
+    setStep('generating')
     setError('')
     try {
-      setStory(await generate(city, neighborhood))
+      const result = await generate(city, neighborhood)
+      setStory(result)
+      setStep('preview')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
-    } finally {
-      setLoading(false)
+      setStep('pick')
     }
   }
 
   async function handleEdit(instruction: string) {
     if (!story) return
-    setLoading(true)
+    setEditing(true)
     setError('')
     try {
       setStory(await edit(story, instruction))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
-      setLoading(false)
+      setEditing(false)
     }
   }
 
@@ -211,29 +216,66 @@ export default function App() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-[#0f0f0f] flex">
-      <div className="w-72 shrink-0 border-r border-[#1e1e1c] p-8 flex flex-col justify-between">
-        <InputPanel onGenerate={handleGenerate} />
-        <div className="text-xs text-[#2a2a28]">Indigo Neighborhood PPT</div>
-      </div>
+  function handleBackToPick() {
+    setStep('pick')
+    setStory(null)
+    setPendingLocation(null)
+    setError('')
+  }
 
-      <div className="flex-1 p-8 overflow-y-auto">
-        {loading && (
-          <div className="flex items-center gap-3 text-[#6b7280] text-sm">
-            <div className="w-4 h-4 border border-[#c8a96e] border-t-transparent rounded-full animate-spin" />
-            Generating...
+  if (step === 'pick') {
+    return (
+      <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
+        <header className="px-8 py-5 border-b border-[#1e1e1c] flex items-center justify-between">
+          <div>
+            <div className="text-xs tracking-widest text-[#6b7280] uppercase">Hotel Indigo</div>
+            <div className="text-base font-light text-[#f5f5f0] mt-0.5">Neighborhood Storytelling</div>
+          </div>
+          <div className="text-xs text-[#6b7280]">Step 1 / 3 · 选择街区</div>
+        </header>
+        <div className="flex-1 relative">
+          <MapPicker onConfirm={handleConfirmLocation} />
+        </div>
+        {error && (
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-red-900/80 text-red-200 text-sm px-4 py-2 rounded">
+            {error}
           </div>
         )}
-        {error && <div className="text-red-400 text-sm">{error}</div>}
-        {!loading && story && (
-          <StoryPreview story={story} onEdit={handleEdit} onExport={handleExport} onGenerateImages={handleGenerateImages} generatingImages={generatingImages} exporting={exporting} />
-        )}
-        {!loading && !story && !error && (
-          <div className="text-[#2a2a28] text-sm mt-1">Enter a city and neighborhood to begin.</div>
-        )}
       </div>
-      {story && <SlideDeck story={story} deckRef={deckRef} />}
-    </div>
-  )
+    )
+  }
+
+  if (step === 'generating' && pendingLocation) {
+    return <GeneratingView city={pendingLocation.city} neighborhood={pendingLocation.neighborhood} onCancel={handleBackToPick} />
+  }
+
+  if (step === 'preview' && story) {
+    return (
+      <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
+        <header className="px-8 py-5 border-b border-[#1e1e1c] flex items-center justify-between">
+          <div>
+            <div className="text-xs tracking-widest text-[#6b7280] uppercase">Hotel Indigo</div>
+            <div className="text-base font-light text-[#f5f5f0] mt-0.5">Neighborhood Storytelling</div>
+          </div>
+          <div className="text-xs text-[#6b7280]">Step 3 / 3 · 预览与导出</div>
+        </header>
+        <div className="flex-1 p-8 overflow-y-auto">
+          {error && <div className="text-red-400 text-sm mb-4">{error}</div>}
+          <StoryPreview
+            story={story}
+            onEdit={handleEdit}
+            onExport={handleExport}
+            onGenerateImages={handleGenerateImages}
+            onBack={handleBackToPick}
+            generatingImages={generatingImages}
+            exporting={exporting}
+            editing={editing}
+          />
+        </div>
+        <SlideDeck story={story} deckRef={deckRef} />
+      </div>
+    )
+  }
+
+  return null
 }

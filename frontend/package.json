@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "html-to-image": "^1.11.13",
+    "mapbox-gl": "^3.23.1",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "react-map-gl": "^8.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
