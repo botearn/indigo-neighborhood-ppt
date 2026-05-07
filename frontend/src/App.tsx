@@ -23,7 +23,11 @@ function now() {
 
 const INITIAL_VIEW = { longitude: 116.4074, latitude: 39.9042, zoom: 11 }
 
-const persisted = loadState()
+const rawPersisted = loadState()
+const wasStuckMidGenerate = !!(rawPersisted && rawPersisted.step >= 2 && !rawPersisted.story)
+const persisted = wasStuckMidGenerate
+  ? { step: 1, candidate: rawPersisted!.candidate, story: null, messages: [] }
+  : rawPersisted
 
 export default function App() {
   const [step, setStep] = useState(persisted?.step ?? 1)
@@ -44,6 +48,22 @@ export default function App() {
     saveState({ step, candidate, story, messages })
   }, [step, candidate, story, messages])
 
+  useEffect(() => {
+    if (wasStuckMidGenerate) {
+      const recovered = persisted?.candidate ?? null
+      setMessages([
+        {
+          role: 'agent',
+          content: '上次刷新打断了生成。' + (recovered ? '要重新走一趟吗？' : '回到选址重新来。'),
+          timestamp: now(),
+          step: 1,
+          action: recovered ? { label: '重新生成', onClick: () => confirmLocation(recovered) } : undefined,
+        },
+      ])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function pushMessage(m: ConciergeMessage) {
     setMessages(prev => [...prev, m])
   }
@@ -53,7 +73,7 @@ export default function App() {
   }
 
   async function confirmLocation(r: GeoResult) {
-    setCandidate(null)
+    setCandidate(r)
     setStep(2)
     setError('')
     setGenerating(true)
