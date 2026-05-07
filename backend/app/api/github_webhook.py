@@ -17,46 +17,61 @@ def _verify_signature(body: bytes, signature: str) -> bool:
 
 
 def _card_push(payload: dict) -> dict:
-    repo = payload.get("repository", {}).get("full_name", "")
+    repo_name = payload.get("repository", {}).get("name", "")
     pusher = payload.get("pusher", {}).get("name", "unknown")
     branch = payload.get("ref", "").replace("refs/heads/", "")
     commits = payload.get("commits", [])
     compare_url = payload.get("compare", "")
+    forced = payload.get("forced", False)
 
-    commit_lines = "\n".join(
-        f"· [{c['id'][:7]}] {c['message'].splitlines()[0]}" for c in commits[:5]
-    )
-    if len(commits) > 5:
-        commit_lines += f"\n· ... 共 {len(commits)} 个提交"
+    head_msg = ""
+    if commits:
+        head_msg = commits[-1].get("message", "").splitlines()[0]
+
+    n = len(commits)
+    suffix = ""
+    if n > 1:
+        suffix = f" (+{n - 1})"
+
+    title_prefix = "⚠️ Force-push" if forced else "🚀"
+    title = f"{title_prefix} {repo_name}/{branch} · {head_msg}{suffix}" if head_msg else f"{title_prefix} {repo_name}/{branch} · {n} commits"
+    if len(title) > 90:
+        title = title[:87] + "..."
+
+    elements: list = []
+    if n > 1:
+        commit_lines = "\n".join(
+            f"· `{c['id'][:7]}` {c['message'].splitlines()[0]}" for c in commits[-5:][::-1]
+        )
+        if n > 5:
+            commit_lines += f"\n· ... 共 {n} 个提交"
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": commit_lines}})
+
+    elements.append({
+        "tag": "note",
+        "elements": [{"tag": "lark_md", "content": f"由 **{pusher}** 推送 · `{branch}`"}],
+    })
+
+    elements.append({
+        "tag": "action",
+        "actions": [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "查看对比"},
+                "url": compare_url,
+                "type": "default",
+            }
+        ],
+    })
 
     return {
         "msg_type": "interactive",
         "card": {
             "header": {
-                "title": {"tag": "plain_text", "content": f"🚀 {repo} 新推送"},
-                "template": "blue",
+                "title": {"tag": "plain_text", "content": title},
+                "template": "red" if forced else "blue",
             },
-            "elements": [
-                {
-                    "tag": "div",
-                    "fields": [
-                        {"is_short": True, "text": {"tag": "lark_md", "content": f"**推送者**\n{pusher}"}},
-                        {"is_short": True, "text": {"tag": "lark_md", "content": f"**分支**\n{branch}"}},
-                    ],
-                },
-                {"tag": "div", "text": {"tag": "lark_md", "content": f"**提交记录**\n{commit_lines}"}},
-                {
-                    "tag": "action",
-                    "actions": [
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": "查看对比"},
-                            "url": compare_url,
-                            "type": "default",
-                        }
-                    ],
-                },
-            ],
+            "elements": elements,
         },
     }
 
@@ -64,37 +79,41 @@ def _card_push(payload: dict) -> dict:
 def _card_pr(payload: dict) -> dict:
     action = payload.get("action", "")
     pr = payload.get("pull_request", {})
-    repo = payload.get("repository", {}).get("full_name", "")
-    title = pr.get("title", "")
+    repo_name = payload.get("repository", {}).get("name", "")
+    pr_title = pr.get("title", "")
+    pr_number = pr.get("number", "")
     user = pr.get("user", {}).get("login", "unknown")
     url = pr.get("html_url", "")
     base = pr.get("base", {}).get("ref", "")
     head = pr.get("head", {}).get("ref", "")
 
-    action_text = {
-        "opened": "新建了 PR",
-        "closed": "合并了 PR" if pr.get("merged") else "关闭了 PR",
-        "reopened": "重新打开了 PR",
-        "review_requested": "请求了 Review",
-    }.get(action, action)
+    icon, verb, template = {
+        "opened": ("📬", "opened", "orange"),
+        "reopened": ("📬", "reopened", "orange"),
+        "review_requested": ("👀", "review requested", "yellow"),
+    }.get(action, ("🔀", action, "grey"))
 
-    template = "green" if action == "closed" and pr.get("merged") else "orange"
+    if action == "closed":
+        if pr.get("merged"):
+            icon, verb, template = "✅", "merged", "green"
+        else:
+            icon, verb, template = "🚫", "closed", "grey"
+
+    title = f"{icon} {repo_name} #{pr_number} {verb} · {pr_title}"
+    if len(title) > 90:
+        title = title[:87] + "..."
 
     return {
         "msg_type": "interactive",
         "card": {
             "header": {
-                "title": {"tag": "plain_text", "content": f"🔀 {repo} · {action_text}"},
+                "title": {"tag": "plain_text", "content": title},
                 "template": template,
             },
             "elements": [
-                {"tag": "div", "text": {"tag": "lark_md", "content": f"**{title}**"}},
                 {
-                    "tag": "div",
-                    "fields": [
-                        {"is_short": True, "text": {"tag": "lark_md", "content": f"**提交者**\n{user}"}},
-                        {"is_short": True, "text": {"tag": "lark_md", "content": f"**分支**\n`{head}` → `{base}`"}},
-                    ],
+                    "tag": "note",
+                    "elements": [{"tag": "lark_md", "content": f"**{user}** · `{head}` → `{base}`"}],
                 },
                 {
                     "tag": "action",
