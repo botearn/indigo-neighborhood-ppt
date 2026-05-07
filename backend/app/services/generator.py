@@ -155,6 +155,14 @@ async def edit_story_unit(req: EditRequest) -> StoryUnit:
     client = _client()
     _, edit_model = _models()
     history_block = _format_prior_instructions(req.conversation_history)
+
+    # Snapshot image URLs before the LLM call — the schema in SYSTEM_PROMPT
+    # doesn't include image_url, so the LLM strips them on rewrite.
+    saved_mood_url = req.story_unit.mood_image_url
+    saved_beat_urls: dict[str, str | None] = {
+        b.verb.value: b.image_url for b in req.story_unit.beats
+    }
+
     user_msg = f"""{history_block}Current story unit:
 {req.story_unit.model_dump_json(indent=2)}
 
@@ -162,7 +170,7 @@ New instruction: {req.instruction}
 
 Apply the new instruction while keeping prior preferences intact. Return the full updated story unit as JSON."""
 
-    return _complete_with_retry(
+    new_story = _complete_with_retry(
         client,
         edit_model,
         [
@@ -170,3 +178,12 @@ Apply the new instruction while keeping prior preferences intact. Return the ful
             {"role": "user", "content": user_msg},
         ],
     )
+
+    # Restore image URLs by verb (each verb appears exactly once per StoryUnit)
+    new_story.mood_image_url = saved_mood_url
+    for b in new_story.beats:
+        url = saved_beat_urls.get(b.verb.value)
+        if url is not None:
+            b.image_url = url
+
+    return new_story
