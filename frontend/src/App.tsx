@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { toPng } from 'html-to-image'
 import type { StoryUnit } from './types'
-import { generate, edit, generateImages, regenerateImage, type ImageTarget } from './api'
+import { generate, edit, generateImages, regenerateImage, exportPpt, type ImageTarget } from './api'
+import { SlideDeck } from './Slides'
 import { MapPicker, forwardGeocode, reverseGeocode, type GeoResult } from './MapPicker'
 import { MapBackdrop } from './MapBackdrop'
 import { Concierge, type ConciergeMessage } from './Concierge'
@@ -8,7 +10,7 @@ import { StepNav, type StepDef } from './StepNav'
 import { TextStage } from './stages/TextStage'
 import { ImageStage } from './stages/ImageStage'
 import { StructureStage, _cycleIntent } from './stages/StructureStage'
-import { StubStage } from './stages/StubStage'
+import { ExportStage } from './stages/ExportStage'
 import { loadState, saveState, clearState } from './session'
 
 const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
@@ -47,6 +49,9 @@ export default function App() {
   const [imagingPics, setImagingPics] = useState(false)
   const [selectedImage, setSelectedImage] = useState<ImageTarget | null>(null)
   const [regeneratingImage, setRegeneratingImage] = useState<ImageTarget | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportedAt, setExportedAt] = useState<number | null>(null)
+  const deckRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
   const [error, setError] = useState('')
 
@@ -326,6 +331,47 @@ export default function App() {
     })
   }
 
+  async function handleExport() {
+    if (!story || !deckRef.current) return
+    setExporting(true)
+    setError('')
+    pushMessage({
+      role: 'agent',
+      content: '正在把每一页渲染成图，再打包成 PPT。约 10 秒。',
+      timestamp: now(),
+      step: 5,
+    })
+    try {
+      await new Promise(r => setTimeout(r, 100))
+      const slideEls = Array.from(
+        deckRef.current.querySelectorAll('[data-slide] > *'),
+      ) as HTMLElement[]
+      const dataUrls: string[] = []
+      for (const el of slideEls) {
+        const url = await toPng(el, { cacheBust: true, pixelRatio: 1 })
+        dataUrls.push(url)
+      }
+      await exportPpt(story, dataUrls)
+      setExportedAt(Date.now())
+      pushMessage({
+        role: 'agent',
+        content: '导出完成。下载好就可以用了。',
+        timestamp: now(),
+        step: 5,
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Export failed')
+      pushMessage({
+        role: 'agent',
+        content: `导出失败：${e instanceof Error ? e.message : 'unknown'}`,
+        timestamp: now(),
+        step: 5,
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   function reorderBeat(fromIndex: number, toIndex: number) {
     if (!story) return
     if (toIndex < 0 || toIndex >= story.beats.length) return
@@ -364,8 +410,8 @@ export default function App() {
 
   const conciergeStepLabel = STEP_DEFS[step - 1]?.sublabel ?? ''
   const conciergeThinking =
-    generating || editing || searching || imagingPics || regeneratingImage !== null
-  const conciergeDisabled = generating || imagingPics
+    generating || editing || searching || imagingPics || regeneratingImage !== null || exporting
+  const conciergeDisabled = generating || imagingPics || exporting
 
   const stepPlaceholder =
     step === 1
@@ -376,6 +422,8 @@ export default function App() {
       ? '比如「换成黄昏」、「再 cinematic 一些」'
       : step === 4
       ? '比如「把 BUY 放第一个」、「第 3 个 beat 改短」'
+      : step === 5
+      ? '点导出 PPT 下载，或者回上一步再改。'
       : 'Ask the concierge…'
 
   const stepHint =
@@ -387,6 +435,8 @@ export default function App() {
         : '点一张图选中，再让我改它。'
       : step === 4
       ? '直接拖动顺序、点 chip 切换 slide 风格。或者告诉我整体怎么调，比如「把 BUY 放第一个」。'
+      : step === 5
+      ? '都改完了？点下面的导出 PPT 下载文件。'
       : undefined
 
   return (
@@ -446,12 +496,13 @@ export default function App() {
           </div>
         )}
 
-        {step === 5 && (
+        {step === 5 && story && (
           <div className="absolute inset-0 pr-[412px]">
-            <StubStage
-              step={5}
-              title="导出"
-              description="确认无误后导出 .pptx。"
+            <ExportStage
+              story={story}
+              exporting={exporting}
+              exportedAt={exportedAt}
+              onExport={handleExport}
               onBack={() => setStep(4)}
             />
           </div>
@@ -474,6 +525,8 @@ export default function App() {
           {error}
         </div>
       )}
+
+      {step === 5 && story && <SlideDeck story={story} deckRef={deckRef} />}
     </div>
   )
 }
