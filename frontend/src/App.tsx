@@ -9,7 +9,8 @@ import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
 import { TextStage } from './stages/TextStage'
 import { ImageStage } from './stages/ImageStage'
-import { StructureStage, _cycleIntent } from './stages/StructureStage'
+import { StructureStage } from './stages/StructureStage'
+import type { VisualIntent } from './types'
 import { ExportStage } from './stages/ExportStage'
 import { loadState, saveState, clearState } from './session'
 
@@ -381,11 +382,9 @@ export default function App() {
     setStory({ ...story, beats })
   }
 
-  function cycleIntent(beatIndex: number) {
+  function setBeatIntent(beatIndex: number, intent: VisualIntent) {
     if (!story) return
-    const beats = story.beats.map((b, i) =>
-      i === beatIndex ? { ...b, visual_intent: _cycleIntent(b.visual_intent) } : b,
-    )
+    const beats = story.beats.map((b, i) => (i === beatIndex ? { ...b, visual_intent: intent } : b))
     setStory({ ...story, beats })
   }
 
@@ -434,7 +433,7 @@ export default function App() {
         ? '告诉我这张图要怎么改。比如「换成黄昏」、「再 cinematic 一些」、「人多一点」。'
         : '点一张图选中，再让我改它。'
       : step === 4
-      ? '直接拖动顺序、点 chip 切换 slide 风格。或者告诉我整体怎么调，比如「把 BUY 放第一个」。'
+      ? '↑↓ 调顺序、点风格 chip 选 6 种 slide 排版。或者告诉我「把 BUY 放第一个」之类。'
       : step === 5
       ? '都改完了？点下面的导出 PPT 下载文件。'
       : undefined
@@ -489,7 +488,7 @@ export default function App() {
             <StructureStage
               story={story}
               onReorder={reorderBeat}
-              onCycleIntent={cycleIntent}
+              onSetIntent={setBeatIntent}
               onNext={() => setStep(5)}
               onBack={() => setStep(3)}
             />
