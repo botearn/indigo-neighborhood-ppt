@@ -19,7 +19,7 @@ type Props = {
 export function TextStage({ story, loading, pendingLocation, onNext }: Props) {
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-[720px] mx-auto px-10 py-12">
+      <div className="max-w-[800px] mx-auto px-12 py-14">
         <div className="mb-10">
           <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280] mb-2">
             Field Notes · Step 2
@@ -84,9 +84,9 @@ function Skeleton() {
 
 function StoryView({ story }: { story: StoryUnit }) {
   return (
-    <div className="space-y-8 animate-fade-rise">
-      <div className="border-l-2 border-[#c8a96e] pl-5">
-        <div className="text-[32px] font-light text-[#f5f5f0] leading-tight">
+    <div className="space-y-10 animate-fade-rise">
+      <div className="border-l-2 border-[#c8a96e] pl-6 py-2">
+        <div className="text-[34px] font-light text-[#f5f5f0] leading-tight">
           {story.signature.zh}
         </div>
         <div className="font-mono text-[11px] tracking-[0.25em] uppercase text-[#c8a96e] mt-2">
@@ -103,11 +103,11 @@ function StoryView({ story }: { story: StoryUnit }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 auto-rows-fr">
+      <div className="grid grid-cols-2 gap-4 auto-rows-fr">
         {story.beats.map((beat, i) => (
           <div
             key={i}
-            className="bg-[#1a1a18]/50 rounded p-5 border-t-2 flex flex-col"
+            className="bg-[#1a1a18]/60 backdrop-blur-sm rounded p-6 border-t-2 flex flex-col"
             style={{ borderColor: VERB_COLORS[beat.verb] }}
           >
             <div className="flex items-center gap-2 mb-3">

@@ -19,7 +19,7 @@ type Props = {
 export function ImageStage({ story, loading, onNext, onBack }: Props) {
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-[760px] mx-auto px-10 py-12">
+      <div className="max-w-[820px] mx-auto px-12 py-14">
         <div className="mb-10">
           <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280] mb-2">
             Field Notes · Step 3
@@ -44,7 +44,7 @@ export function ImageStage({ story, loading, onNext, onBack }: Props) {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           {story.beats.map((beat, i) => (
             <div
               key={i}
