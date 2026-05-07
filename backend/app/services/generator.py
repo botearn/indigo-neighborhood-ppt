@@ -2,7 +2,7 @@ import json
 from openai import OpenAI
 from pydantic import ValidationError
 from app.core.config import settings
-from app.core.models import StoryUnit, GenerateRequest, EditRequest
+from app.core.models import StoryUnit, GenerateRequest, EditRequest, ConversationMessage
 
 SYSTEM_PROMPT = """你是 Hotel Indigo 的在地叙事作者。语调参考汪曾祺、沈从文写街区的方式——节制、具体、有人味，不是旅游宣传。
 
@@ -136,15 +136,31 @@ async def generate_story_unit(req: GenerateRequest) -> StoryUnit:
     )
 
 
+def _format_prior_instructions(history: list[ConversationMessage] | None) -> str:
+    if not history:
+        return ""
+    prior = [m for m in history if m.role == "user"][-10:]
+    if not prior:
+        return ""
+    lines = [f"{i+1}. {m.content}" for i, m in enumerate(prior)]
+    return (
+        "Prior instructions the user has given in this session (already applied — preserve them, "
+        "don't undo unless the new instruction explicitly contradicts):\n"
+        + "\n".join(lines)
+        + "\n\n"
+    )
+
+
 async def edit_story_unit(req: EditRequest) -> StoryUnit:
     client = _client()
     _, edit_model = _models()
-    user_msg = f"""Current story unit:
+    history_block = _format_prior_instructions(req.conversation_history)
+    user_msg = f"""{history_block}Current story unit:
 {req.story_unit.model_dump_json(indent=2)}
 
-Instruction: {req.instruction}
+New instruction: {req.instruction}
 
-Apply the instruction and return the full updated story unit as JSON."""
+Apply the new instruction while keeping prior preferences intact. Return the full updated story unit as JSON."""
 
     return _complete_with_retry(
         client,

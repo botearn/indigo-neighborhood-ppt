@@ -80,12 +80,20 @@ class StoryUnit(BaseModel):
         return beats
 
 
+class ConversationMessage(BaseModel):
+    role: str  # 'user' | 'agent'
+    content: str
+    step: Optional[int] = None
+
+
 class GenerateRequest(BaseModel):
     city: str
     neighborhood: str
     hotel_name: Optional[str] = None
+    conversation_history: Optional[list[ConversationMessage]] = None
 
 
 class EditRequest(BaseModel):
     story_unit: StoryUnit
     instruction: str
+    conversation_history: Optional[list[ConversationMessage]] = None
