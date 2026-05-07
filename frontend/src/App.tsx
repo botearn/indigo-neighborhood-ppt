@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { StoryUnit } from './types'
 import { generate, edit } from './api'
 import { MapPicker, forwardGeocode, reverseGeocode, type GeoResult } from './MapPicker'
@@ -6,6 +6,7 @@ import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
 import { TextStage } from './stages/TextStage'
 import { StubStage } from './stages/StubStage'
+import { loadState, saveState, clearState } from './session'
 
 const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
   { num: 1, label: '选址', sublabel: 'Pick a neighborhood' },
@@ -22,16 +23,26 @@ function now() {
 
 const INITIAL_VIEW = { longitude: 116.4074, latitude: 39.9042, zoom: 11 }
 
+const persisted = loadState()
+
 export default function App() {
-  const [step, setStep] = useState(1)
-  const [viewState, setViewState] = useState(INITIAL_VIEW)
-  const [candidate, setCandidate] = useState<GeoResult | null>(null)
-  const [story, setStory] = useState<StoryUnit | null>(null)
+  const [step, setStep] = useState(persisted?.step ?? 1)
+  const [viewState, setViewState] = useState(() =>
+    persisted?.candidate
+      ? { longitude: persisted.candidate.longitude, latitude: persisted.candidate.latitude, zoom: 13 }
+      : INITIAL_VIEW,
+  )
+  const [candidate, setCandidate] = useState<GeoResult | null>(persisted?.candidate ?? null)
+  const [story, setStory] = useState<StoryUnit | null>(persisted?.story ?? null)
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [searching, setSearching] = useState(false)
-  const [messages, setMessages] = useState<ConciergeMessage[]>([])
+  const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    saveState({ step, candidate, story, messages })
+  }, [step, candidate, story, messages])
 
   function pushMessage(m: ConciergeMessage) {
     setMessages(prev => [...prev, m])
@@ -151,7 +162,7 @@ export default function App() {
       if (!story) return
       setEditing(true)
       try {
-        const updated = await edit(story, instruction)
+        const updated = await edit(story, instruction, messages)
         setStory(updated)
         pushMessage({
           role: 'agent',
@@ -187,6 +198,7 @@ export default function App() {
       setCandidate(null)
       setMessages([])
       setError('')
+      clearState()
       return
     }
     setStep(target)
