@@ -97,3 +97,15 @@ class EditRequest(BaseModel):
     story_unit: StoryUnit
     instruction: str
     conversation_history: Optional[list[ConversationMessage]] = None
+
+
+class SingleImageRequest(BaseModel):
+    story_unit: StoryUnit
+    target_type: str  # 'mood' | 'beat'
+    beat_index: Optional[int] = None
+    instruction: Optional[str] = None
+    conversation_history: Optional[list[ConversationMessage]] = None
+
+
+class SingleImageResponse(BaseModel):
+    image_url: str

@@ -5,7 +5,7 @@ import random
 import httpx
 import fal_client
 from app.core.config import settings
-from app.core.models import StoryUnit
+from app.core.models import StoryUnit, SingleImageRequest
 
 
 VERB_KEYWORDS = {
@@ -126,3 +126,24 @@ async def generate_images(story: StoryUnit) -> StoryUnit:
     for i, beat in enumerate(story.beats):
         beat.image_url = await _gen(_beat_prompt(story, i))
     return story
+
+
+async def generate_single_image(req: SingleImageRequest) -> str:
+    story = req.story_unit
+    if req.target_type == "mood":
+        if settings.image_provider == "unsplash":
+            return await _search_unsplash(_mood_query(story)) or ""
+        prompt = _mood_prompt(story)
+    elif req.target_type == "beat":
+        if req.beat_index is None or not (0 <= req.beat_index < len(story.beats)):
+            raise ValueError(f"invalid beat_index: {req.beat_index}")
+        if settings.image_provider == "unsplash":
+            return await _search_unsplash(_beat_query(story, req.beat_index)) or ""
+        prompt = _beat_prompt(story, req.beat_index)
+    else:
+        raise ValueError(f"unknown target_type: {req.target_type}")
+
+    if req.instruction:
+        prompt = f"{prompt}, {req.instruction.strip()}"
+
+    return await _gen(prompt)

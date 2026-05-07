@@ -2,7 +2,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ValidationError
-from app.core.models import GenerateRequest, EditRequest, StoryUnit
+from app.core.models import GenerateRequest, EditRequest, StoryUnit, SingleImageRequest, SingleImageResponse
 from app.services import generator, ppt_builder, image_generator
 
 
@@ -34,6 +34,17 @@ async def edit(req: EditRequest):
 async def images(story: StoryUnit):
     try:
         return await image_generator.generate_images(story)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/images/single", response_model=SingleImageResponse)
+async def images_single(req: SingleImageRequest):
+    try:
+        url = await image_generator.generate_single_image(req)
+        return SingleImageResponse(image_url=url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
