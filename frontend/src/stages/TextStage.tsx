@@ -19,7 +19,7 @@ type Props = {
 export function TextStage({ story, loading, pendingLocation, onNext }: Props) {
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-[640px] mx-auto px-10 py-12">
+      <div className="max-w-[720px] mx-auto px-10 py-12">
         <div className="mb-10">
           <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280] mb-2">
             Field Notes · Step 2
@@ -103,30 +103,34 @@ function StoryView({ story }: { story: StoryUnit }) {
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 auto-rows-fr">
         {story.beats.map((beat, i) => (
           <div
             key={i}
-            className="bg-[#1a1a18]/50 rounded p-5 border-l-2"
+            className="bg-[#1a1a18]/50 rounded p-5 border-t-2 flex flex-col"
             style={{ borderColor: VERB_COLORS[beat.verb] }}
           >
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-2 mb-3">
               <span
-                className="font-mono text-[11px] font-medium tracking-[0.2em]"
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: VERB_COLORS[beat.verb] }}
+              />
+              <span
+                className="font-mono text-[10px] font-medium tracking-[0.25em]"
                 style={{ color: VERB_COLORS[beat.verb] }}
               >
                 {beat.verb}
               </span>
-              <span className="text-[16px] text-[#f5f5f0]">{beat.title}</span>
             </div>
-            <div className="font-sans text-[14px] text-[#c8c8c0] leading-relaxed">{beat.copy}</div>
+            <div className="text-[16px] text-[#f5f5f0] mb-2 leading-snug">{beat.title}</div>
+            <div className="text-[13px] text-[#c8c8c0] leading-relaxed">{beat.copy}</div>
             {beat.detail && (
-              <div className="italic font-light text-[14px] text-[#a8a8a0] mt-2 leading-relaxed">
+              <div className="italic font-light text-[13px] text-[#a8a8a0] mt-2 leading-relaxed">
                 {beat.detail}
               </div>
             )}
             {beat.sensory.length > 0 && (
-              <div className="font-mono text-[10px] tracking-[0.15em] uppercase text-[#6b7280] mt-3">
+              <div className="font-mono text-[10px] tracking-[0.15em] uppercase text-[#6b7280] mt-auto pt-3 border-t border-[#2a2a28]">
                 {beat.sensory.map(s => s.description).join('  ·  ')}
               </div>
             )}
