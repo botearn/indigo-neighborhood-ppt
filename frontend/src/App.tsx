@@ -7,6 +7,7 @@ import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
 import { TextStage } from './stages/TextStage'
 import { ImageStage } from './stages/ImageStage'
+import { StructureStage, _cycleIntent } from './stages/StructureStage'
 import { StubStage } from './stages/StubStage'
 import { loadState, saveState, clearState } from './session'
 
@@ -245,6 +246,31 @@ export default function App() {
       return
     }
 
+    if (step === 4) {
+      if (!story) return
+      setEditing(true)
+      try {
+        const updated = await edit(story, instruction, messages)
+        setStory(updated)
+        pushMessage({
+          role: 'agent',
+          content: '改好了。再看看？',
+          timestamp: now(),
+          step: 4,
+        })
+      } catch (e) {
+        pushMessage({
+          role: 'agent',
+          content: `没改成：${e instanceof Error ? e.message : 'unknown'}。`,
+          timestamp: now(),
+          step: 4,
+        })
+      } finally {
+        setEditing(false)
+      }
+      return
+    }
+
     if (step === 3) {
       if (!story) return
       if (!selectedImage) {
@@ -300,6 +326,23 @@ export default function App() {
     })
   }
 
+  function reorderBeat(fromIndex: number, toIndex: number) {
+    if (!story) return
+    if (toIndex < 0 || toIndex >= story.beats.length) return
+    const beats = [...story.beats]
+    const [moved] = beats.splice(fromIndex, 1)
+    beats.splice(toIndex, 0, moved)
+    setStory({ ...story, beats })
+  }
+
+  function cycleIntent(beatIndex: number) {
+    if (!story) return
+    const beats = story.beats.map((b, i) =>
+      i === beatIndex ? { ...b, visual_intent: _cycleIntent(b.visual_intent) } : b,
+    )
+    setStory({ ...story, beats })
+  }
+
   function handleJump(target: number) {
     if (target === 1) {
       setStep(1)
@@ -330,7 +373,9 @@ export default function App() {
       : step === 2
       ? '告诉我要怎么改文字…'
       : step === 3
-      ? '比如「第 3 张换成黄昏」、「整体偏胶片质感」'
+      ? '比如「换成黄昏」、「再 cinematic 一些」'
+      : step === 4
+      ? '比如「把 BUY 放第一个」、「第 3 个 beat 改短」'
       : 'Ask the concierge…'
 
   const stepHint =
@@ -340,6 +385,8 @@ export default function App() {
       ? selectedImage
         ? '告诉我这张图要怎么改。比如「换成黄昏」、「再 cinematic 一些」、「人多一点」。'
         : '点一张图选中，再让我改它。'
+      : step === 4
+      ? '直接拖动顺序、点 chip 切换 slide 风格。或者告诉我整体怎么调，比如「把 BUY 放第一个」。'
       : undefined
 
   return (
@@ -387,12 +434,13 @@ export default function App() {
           </div>
         )}
 
-        {step === 4 && (
+        {step === 4 && story && (
           <div className="absolute inset-0 pr-[412px]">
-            <StubStage
-              step={4}
-              title="调整结构"
-              description="排序、删减、压缩、扩写。告诉 Concierge「压到 8 页」「合并第 2 和第 3 段」就行。"
+            <StructureStage
+              story={story}
+              onReorder={reorderBeat}
+              onCycleIntent={cycleIntent}
+              onNext={() => setStep(5)}
               onBack={() => setStep(3)}
             />
           </div>
