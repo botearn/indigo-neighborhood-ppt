@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { StoryUnit } from './types'
 import { generate, edit, generateImages } from './api'
 import { MapPicker, forwardGeocode, reverseGeocode, type GeoResult } from './MapPicker'
+import { MapBackdrop } from './MapBackdrop'
 import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
 import { TextStage } from './stages/TextStage'
@@ -294,6 +295,10 @@ export default function App() {
       <StepNav steps={stepDefs} current={step} onJump={handleJump} />
 
       <main className="flex-1 relative overflow-hidden">
+        {(step === 2 || step === 3) && candidate && (
+          <MapBackdrop longitude={candidate.longitude} latitude={candidate.latitude} />
+        )}
+
         {step === 1 && (
           <div className="absolute inset-0">
             <MapPicker
