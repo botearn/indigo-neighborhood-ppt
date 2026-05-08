@@ -29,6 +29,8 @@ function now() {
 
 const INITIAL_VIEW = { longitude: 116.4074, latitude: 39.9042, zoom: 11 }
 
+const QUESTION_RE = /[？?]|吗|呢|怎么|为什么|为啥|是不是|哪里|哪儿|什么|谁|多少|几点/
+
 const rawPersisted = loadState()
 const wasStuckMidGenerate = !!(rawPersisted && rawPersisted.step >= 2 && !rawPersisted.story)
 const persisted = wasStuckMidGenerate
@@ -207,9 +209,12 @@ export default function App() {
             action: { label: '用这里', onClick: () => confirmLocation(r) },
           })
         } else {
+          const looksLikeQuestion = QUESTION_RE.test(instruction)
           pushMessage({
             role: 'agent',
-            content: '没找到这个地方。再具体一点？比如「上海 武康路」、「成都 玉林」。',
+            content: looksLikeQuestion
+              ? '我这步只帮你选地点 — 一个城市加街区。比如「成都 玉林」、「上海 武康路」。'
+              : '没找到这个地方。再具体一点？比如「上海 武康路」、「成都 玉林」。',
             timestamp: now(),
             step: 1,
           })

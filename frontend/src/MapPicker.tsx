@@ -11,7 +11,7 @@ export type GeoResult = {
   latitude: number
 }
 
-async function _request(url: string): Promise<GeoResult | null> {
+async function _request(url: string, minRelevance = 0): Promise<GeoResult | null> {
   const resp = await fetch(url)
   if (resp.status === 401 || resp.status === 403) {
     throw new Error('Mapbox token 无效或当前域名不在白名单。去 account.mapbox.com 把 http://localhost:5174 加进 URL restrictions（或临时去掉所有限制）。')
@@ -23,6 +23,7 @@ async function _request(url: string): Promise<GeoResult | null> {
   if (!data.features?.length) return null
 
   const f0 = data.features[0]
+  if (typeof f0.relevance === 'number' && f0.relevance < minRelevance) return null
   const [lng, lat] = f0.center
 
   let city = ''
@@ -59,8 +60,8 @@ export async function forwardGeocode(query: string): Promise<GeoResult | null> {
     .replace(/[，,。.！!？?；;]/g, ' ')
     .trim()
   if (!cleaned) return null
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(cleaned)}.json?access_token=${MAPBOX_TOKEN}&language=zh&limit=1`
-  return _request(url)
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(cleaned)}.json?access_token=${MAPBOX_TOKEN}&language=zh&limit=1&types=neighborhood,locality,place,district,address,poi`
+  return _request(url, 0.5)
 }
 
 type Props = {
