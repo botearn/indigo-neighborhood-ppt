@@ -147,9 +147,12 @@ function BeatRow({
   onDown: () => void
   onSetIntent: (intent: VisualIntent) => void
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false)
   return (
     <div
-      className="my-1 flex items-stretch gap-4 py-4 px-4 rounded bg-[#1a1a18]/60 backdrop-blur-sm border-l-2"
+      className={`relative my-1 flex items-stretch gap-4 py-4 px-4 rounded bg-[#1a1a18]/60 backdrop-blur-sm border-l-2 ${
+        pickerOpen ? 'z-50' : ''
+      }`}
       style={{ borderColor: VERB_COLORS[beat.verb] }}
     >
       <div className="flex flex-col items-center gap-1 w-8">
@@ -173,7 +176,12 @@ function BeatRow({
         <div className="text-[12px] text-[#a8a8a0] line-clamp-1">{beat.copy}</div>
       </div>
 
-      <IntentPicker current={beat.visual_intent} onPick={onSetIntent} />
+      <IntentPicker
+        current={beat.visual_intent}
+        onPick={onSetIntent}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+      />
 
       <div className="flex flex-col gap-1 self-center">
         <button
@@ -210,30 +218,33 @@ function BeatRow({
 function IntentPicker({
   current,
   onPick,
+  open,
+  onOpenChange,
 }: {
   current?: VisualIntent
   onPick: (intent: VisualIntent) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!open) return
     function onDocClick(e: MouseEvent) {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false)
+        onOpenChange(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
-  }, [open])
+  }, [open, onOpenChange])
 
   const label = current ? INTENT_LABELS[current] : '选风格'
 
   return (
     <div ref={wrapRef} className="relative shrink-0 self-center">
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => onOpenChange(!open)}
         className="
           min-w-[112px] px-3 py-1.5 rounded
           font-mono text-[10px] tracking-[0.15em] uppercase text-center
@@ -270,7 +281,7 @@ function IntentPicker({
                 key={intent}
                 onClick={() => {
                   onPick(intent)
-                  setOpen(false)
+                  onOpenChange(false)
                 }}
                 className={`
                   w-full text-left px-4 py-2 transition
