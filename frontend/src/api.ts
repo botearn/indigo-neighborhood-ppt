@@ -1,5 +1,6 @@
 import type { StoryUnit } from './types'
 import type { ConciergeMessage } from './Concierge'
+import type { GeoResult } from './MapPicker'
 
 const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ''}/api`
 
@@ -8,6 +9,24 @@ type HistoryMsg = { role: string; content: string; step?: number }
 function toHistory(messages?: ConciergeMessage[]): HistoryMsg[] | undefined {
   if (!messages || messages.length === 0) return undefined
   return messages.map(m => ({ role: m.role, content: m.content, step: m.step }))
+}
+
+export type LocateResult = {
+  reply: string
+  candidate: GeoResult | null
+}
+
+export async function locate(input: string, history?: ConciergeMessage[]): Promise<LocateResult> {
+  const res = await fetch(`${BASE}/locate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input,
+      conversation_history: toHistory(history),
+    }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
 }
 
 export async function generate(

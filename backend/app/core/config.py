@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     feishu_app_secret: str = ""
     feishu_verification_token: str = ""
     feishu_api_base: str = "https://open.feishu.cn/open-apis"
+    mapbox_token: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

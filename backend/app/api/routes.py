@@ -2,8 +2,16 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ValidationError
-from app.core.models import GenerateRequest, EditRequest, StoryUnit, SingleImageRequest, SingleImageResponse
-from app.services import generator, ppt_builder, image_generator
+from app.core.models import (
+    GenerateRequest,
+    EditRequest,
+    StoryUnit,
+    SingleImageRequest,
+    SingleImageResponse,
+    LocateRequest,
+    LocateResponse,
+)
+from app.services import generator, ppt_builder, image_generator, locator
 
 
 class ExportRequest(BaseModel):
@@ -12,6 +20,14 @@ class ExportRequest(BaseModel):
     slides: list[str]
 
 router = APIRouter(prefix="/api")
+
+
+@router.post("/locate", response_model=LocateResponse)
+async def locate(req: LocateRequest):
+    try:
+        return await locator.locate(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/generate", response_model=StoryUnit)

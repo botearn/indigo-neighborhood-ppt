@@ -109,3 +109,21 @@ class SingleImageRequest(BaseModel):
 
 class SingleImageResponse(BaseModel):
     image_url: str
+
+
+class LocationCandidate(BaseModel):
+    city: str
+    neighborhood: str
+    display: str
+    longitude: float
+    latitude: float
+
+
+class LocateRequest(BaseModel):
+    input: str
+    conversation_history: Optional[list[ConversationMessage]] = None
+
+
+class LocateResponse(BaseModel):
+    reply: str
+    candidate: Optional[LocationCandidate] = None

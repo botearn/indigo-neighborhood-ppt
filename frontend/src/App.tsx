@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { toPng } from 'html-to-image'
 import type { StoryUnit } from './types'
-import { generate, edit, generateImages, regenerateImage, exportPpt, type ImageTarget } from './api'
+import { generate, edit, generateImages, locate, regenerateImage, exportPpt, type ImageTarget } from './api'
 import { SlideDeck } from './Slides'
-import { MapPicker, forwardGeocode, reverseGeocode, type GeoResult } from './MapPicker'
+import { MapPicker, reverseGeocode, type GeoResult } from './MapPicker'
 import { MapBackdrop } from './MapBackdrop'
 import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
@@ -28,8 +28,6 @@ function now() {
 }
 
 const INITIAL_VIEW = { longitude: 116.4074, latitude: 39.9042, zoom: 11 }
-
-const QUESTION_RE = /[？?]|吗|呢|怎么|为什么|为啥|是不是|哪里|哪儿|什么|谁|多少|几点/
 
 const rawPersisted = loadState()
 const wasStuckMidGenerate = !!(rawPersisted && rawPersisted.step >= 2 && !rawPersisted.story)
@@ -197,24 +195,21 @@ export default function App() {
     if (step === 1) {
       setSearching(true)
       try {
-        const r = await forwardGeocode(instruction)
-        if (r) {
-          setCandidate(r)
-          flyTo(r)
+        const { reply, candidate: cand } = await locate(instruction, messages)
+        if (cand) {
+          setCandidate(cand)
+          flyTo(cand)
           pushMessage({
             role: 'agent',
-            content: `找到了：${r.city} · ${r.neighborhood}（${r.display}）。要用这里？`,
+            content: reply,
             timestamp: now(),
             step: 1,
-            action: { label: '用这里', onClick: () => confirmLocation(r) },
+            action: { label: '用这里', onClick: () => confirmLocation(cand) },
           })
         } else {
-          const looksLikeQuestion = QUESTION_RE.test(instruction)
           pushMessage({
             role: 'agent',
-            content: looksLikeQuestion
-              ? '我这步只帮你选地点 — 一个城市加街区。比如「成都 玉林」、「上海 武康路」。'
-              : '没找到这个地方。再具体一点？比如「上海 武康路」、「成都 玉林」。',
+            content: reply,
             timestamp: now(),
             step: 1,
           })
@@ -222,7 +217,7 @@ export default function App() {
       } catch (e) {
         pushMessage({
           role: 'agent',
-          content: `搜索失败：${e instanceof Error ? e.message : 'unknown'}`,
+          content: `没接通：${e instanceof Error ? e.message : 'unknown'}。再试一次？`,
           timestamp: now(),
           step: 1,
         })

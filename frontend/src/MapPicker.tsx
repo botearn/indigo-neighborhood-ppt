@@ -11,7 +11,8 @@ export type GeoResult = {
   latitude: number
 }
 
-async function _request(url: string, minRelevance = 0): Promise<GeoResult | null> {
+export async function reverseGeocode(longitude: number, latitude: number): Promise<GeoResult | null> {
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_TOKEN}&language=zh&types=neighborhood,locality,place,district`
   const resp = await fetch(url)
   if (resp.status === 401 || resp.status === 403) {
     throw new Error('Mapbox token 无效或当前域名不在白名单。去 account.mapbox.com 把 http://localhost:5174 加进 URL restrictions（或临时去掉所有限制）。')
@@ -23,7 +24,6 @@ async function _request(url: string, minRelevance = 0): Promise<GeoResult | null
   if (!data.features?.length) return null
 
   const f0 = data.features[0]
-  if (typeof f0.relevance === 'number' && f0.relevance < minRelevance) return null
   const [lng, lat] = f0.center
 
   let city = ''
@@ -47,21 +47,6 @@ async function _request(url: string, minRelevance = 0): Promise<GeoResult | null
     longitude: lng,
     latitude: lat,
   }
-}
-
-export async function reverseGeocode(longitude: number, latitude: number): Promise<GeoResult | null> {
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_TOKEN}&language=zh&types=neighborhood,locality,place,district`
-  return _request(url)
-}
-
-export async function forwardGeocode(query: string): Promise<GeoResult | null> {
-  const cleaned = query
-    .replace(/我想要|我要|帮我|麻烦|做一?个?|生成|创建|来一?个?|的?\s*PPT|的?\s*ppt/gi, '')
-    .replace(/[，,。.！!？?；;]/g, ' ')
-    .trim()
-  if (!cleaned) return null
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(cleaned)}.json?access_token=${MAPBOX_TOKEN}&language=zh&limit=1&types=neighborhood,locality,place,district,address,poi`
-  return _request(url, 0.5)
 }
 
 type Props = {
