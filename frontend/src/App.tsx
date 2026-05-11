@@ -13,6 +13,7 @@ import { StructureStage } from './stages/StructureStage'
 import type { VisualIntent } from './types'
 import { ExportStage } from './stages/ExportStage'
 import { loadState, saveState, clearState } from './session'
+import { FastLane } from './FastLane'
 
 const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
   { num: 1, label: '选址', sublabel: 'Pick a neighborhood' },
@@ -35,7 +36,10 @@ const persisted = wasStuckMidGenerate
   ? { step: 1, candidate: rawPersisted!.candidate, story: null, messages: [] }
   : rawPersisted
 
+type AppMode = 'home' | 'fast' | 'guided'
+
 export default function App() {
+  const [appMode, setAppMode] = useState<AppMode>(persisted ? 'guided' : 'home')
   const [step, setStep] = useState(persisted?.step ?? 1)
   const [viewState, setViewState] = useState(() =>
     persisted?.candidate
@@ -388,6 +392,18 @@ export default function App() {
     setStory({ ...story, beats })
   }
 
+  function handleFastDone(result: StoryUnit) {
+    setStory(result)
+    setStep(4)
+    setMessages([{
+      role: 'agent',
+      content: `生成完成。${result.city}·${result.neighborhood} 的 6 个 beat 和图片都到了，调一下排版再导出。`,
+      timestamp: now(),
+      step: 4,
+    }])
+    setAppMode('guided')
+  }
+
   function handleJump(target: number) {
     if (target === 1) {
       setStep(1)
@@ -399,6 +415,16 @@ export default function App() {
       return
     }
     setStep(target)
+  }
+
+  function handleGoHome() {
+    setAppMode('home')
+    setStep(1)
+    setStory(null)
+    setCandidate(null)
+    setMessages([])
+    setError('')
+    clearState()
   }
 
   const stepDefs: StepDef[] = STEP_DEFS.map(s => ({
@@ -438,9 +464,75 @@ export default function App() {
       ? '都改完了？点下面的导出 PPT 下载文件。'
       : undefined
 
+  if (appMode === 'home') {
+    return (
+      <div className="h-screen flex flex-col bg-[#0f0f0f]">
+        <header className="h-16 px-6 flex items-center border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm">
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">Hotel Indigo</span>
+            <span className="text-[15px] font-light text-[#f5f5f0]/85">Neighborhood Storytelling</span>
+          </div>
+        </header>
+        <main className="flex-1 flex items-center justify-center px-6">
+          <div className="w-full max-w-[760px] flex flex-col gap-10">
+            <div className="text-center">
+              <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#c8a96e] mb-3">选择模式</div>
+              <h1 className="text-[28px] font-light text-[#f5f5f0]">从哪里开始？</h1>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {/* Fast lane */}
+              <button
+                onClick={() => setAppMode('fast')}
+                className="group text-left bg-[#1a1a18] hover:bg-[#1e1e1c] border border-[#2a2a28] hover:border-[#c8a96e]/40 rounded-lg p-7 transition-all"
+              >
+                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#c8a96e] mb-4">FAST LANE</div>
+                <div className="text-[20px] font-light text-[#f5f5f0] mb-2 group-hover:text-white transition">一键生成</div>
+                <div className="text-sm text-[#6b7280] leading-relaxed mb-6">
+                  我知道地点。输入城市和街区，系统自动生成故事与图片，最后只微调排版。
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {['输入城市 + 街区', '自动生成故事', '自动生成图片', '微调排版 → 导出'].map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-[#6b7280]">
+                      <span className="font-mono text-[#c8a96e]/60">{i + 1}</span>
+                      <span>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </button>
+
+              {/* Guided */}
+              <button
+                onClick={() => setAppMode('guided')}
+                className="group text-left bg-[#1a1a18] hover:bg-[#1e1e1c] border border-[#2a2a28] hover:border-[#2d7a7a]/50 rounded-lg p-7 transition-all"
+              >
+                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#2d7a7a] mb-4">GUIDED</div>
+                <div className="text-[20px] font-light text-[#f5f5f0] mb-2 group-hover:text-white transition">逐步创作</div>
+                <div className="text-sm text-[#6b7280] leading-relaxed mb-6">
+                  帮我找地点。通过对话选址，逐步确认故事、图片、结构，全程可介入调整。
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {['对话选址', '确认故事文字', '调整图片', '排版 → 导出'].map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-[#6b7280]">
+                      <span className="font-mono text-[#2d7a7a]/60">{i + 1}</span>
+                      <span>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  if (appMode === 'fast') {
+    return <FastLane onDone={handleFastDone} onBack={() => setAppMode('home')} />
+  }
+
   return (
     <div className="h-screen flex flex-col bg-[#0f0f0f]">
-      <StepNav steps={stepDefs} current={step} onJump={handleJump} />
+      <StepNav steps={stepDefs} current={step} onJump={handleJump} onHome={handleGoHome} />
 
       <main className="flex-1 relative overflow-hidden">
         {(step === 2 || step === 3) && candidate && (
