@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react'
-import { toPng } from 'html-to-image'
+import { useState } from 'react'
 import type { IndigoStoryUnit } from './indigo_types'
 import { generateIndigo, exportIndigoPpt } from './api'
-import { IndigoSlides, IndigoPreview } from './IndigoSlides'
+import { IndigoPreview } from './IndigoSlides'
 
 type Phase = 'idle' | 'generating' | 'preview' | 'exporting'
 
@@ -12,7 +11,6 @@ export function FastLane({ onBack }: { onBack: () => void }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [story, setStory] = useState<IndigoStoryUnit | null>(null)
   const [error, setError] = useState('')
-  const captureRef = useRef<HTMLDivElement>(null)
 
   async function handleGenerate() {
     const c = city.trim(), d = district.trim()
@@ -30,18 +28,10 @@ export function FastLane({ onBack }: { onBack: () => void }) {
   }
 
   async function handleExport() {
-    if (!story || !captureRef.current) return
+    if (!story) return
     setPhase('exporting')
     try {
-      const slideEls = Array.from(
-        captureRef.current.querySelectorAll('[data-indigo-slide]'),
-      ) as HTMLElement[]
-      const dataUrls: string[] = []
-      for (const el of slideEls) {
-        const url = await toPng(el, { cacheBust: true, pixelRatio: 2 })
-        dataUrls.push(url)
-      }
-      await exportIndigoPpt(story, dataUrls)
+      await exportIndigoPpt(story)
     } catch (e) {
       setError(e instanceof Error ? e.message : '导出失败')
     } finally {
@@ -179,8 +169,6 @@ export function FastLane({ onBack }: { onBack: () => void }) {
         )}
       </main>
 
-      {/* Hidden capture target */}
-      {story && <IndigoSlides story={story} containerRef={captureRef} />}
     </div>
   )
 }

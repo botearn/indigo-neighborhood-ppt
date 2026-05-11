@@ -116,18 +116,11 @@ export async function generateIndigo(
   return res.json()
 }
 
-export async function exportIndigoPpt(
-  story: IndigoStoryUnit,
-  slideDataUrls: string[],
-): Promise<void> {
-  const res = await fetch(`${BASE}/export`, {
+export async function exportIndigoPpt(story: IndigoStoryUnit): Promise<void> {
+  const res = await fetch(`${BASE}/indigo/export-pptx`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      neighborhood: story.district,
-      city: story.city,
-      slides: slideDataUrls,
-    }),
+    body: JSON.stringify(story),
   })
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()

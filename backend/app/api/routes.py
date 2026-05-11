@@ -13,7 +13,7 @@ from app.core.models import (
     IndigoGenerateRequest,
     IndigoStoryUnit,
 )
-from app.services import generator, ppt_builder, image_generator, locator, indigo_generator
+from app.services import generator, ppt_builder, image_generator, locator, indigo_generator, indigo_pptx_builder
 
 
 class ExportRequest(BaseModel):
@@ -28,6 +28,21 @@ router = APIRouter(prefix="/api")
 async def indigo_generate(req: IndigoGenerateRequest):
     try:
         return await indigo_generator.generate_indigo(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/export-pptx")
+async def indigo_export_pptx(story: IndigoStoryUnit):
+    try:
+        data = indigo_pptx_builder.build_indigo_pptx(story)
+        filename = f"{story.district}_{story.city}.pptx"
+        encoded = quote(filename)
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": f"attachment; filename=\"presentation.pptx\"; filename*=UTF-8''{encoded}"},
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
