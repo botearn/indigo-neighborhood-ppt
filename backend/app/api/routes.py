@@ -10,8 +10,10 @@ from app.core.models import (
     SingleImageResponse,
     LocateRequest,
     LocateResponse,
+    IndigoGenerateRequest,
+    IndigoStoryUnit,
 )
-from app.services import generator, ppt_builder, image_generator, locator
+from app.services import generator, ppt_builder, image_generator, locator, indigo_generator
 
 
 class ExportRequest(BaseModel):
@@ -20,6 +22,14 @@ class ExportRequest(BaseModel):
     slides: list[str]
 
 router = APIRouter(prefix="/api")
+
+
+@router.post("/indigo/generate", response_model=IndigoStoryUnit)
+async def indigo_generate(req: IndigoGenerateRequest):
+    try:
+        return await indigo_generator.generate_indigo(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/locate", response_model=LocateResponse)

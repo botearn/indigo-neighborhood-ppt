@@ -1,4 +1,5 @@
 import type { StoryUnit } from './types'
+import type { IndigoStoryUnit } from './indigo_types'
 import type { ConciergeMessage } from './Concierge'
 import type { GeoResult } from './MapPicker'
 
@@ -99,6 +100,43 @@ export async function regenerateImage(
   if (!res.ok) throw new Error(await res.text())
   const data = (await res.json()) as { image_url: string }
   return data.image_url
+}
+
+export async function generateIndigo(
+  city: string,
+  district: string,
+  hotelEn?: string,
+): Promise<IndigoStoryUnit> {
+  const res = await fetch(`${BASE}/indigo/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ city, district, hotel_en: hotelEn }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function exportIndigoPpt(
+  story: IndigoStoryUnit,
+  slideDataUrls: string[],
+): Promise<void> {
+  const res = await fetch(`${BASE}/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      neighborhood: story.district,
+      city: story.city,
+      slides: slideDataUrls,
+    }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${story.district}_${story.city}.pptx`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export async function exportPpt(storyUnit: StoryUnit, slideDataUrls: string[]): Promise<void> {

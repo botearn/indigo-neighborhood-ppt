@@ -127,3 +127,53 @@ class LocateRequest(BaseModel):
 class LocateResponse(BaseModel):
     reply: str
     candidate: Optional[LocationCandidate] = None
+
+
+# ── Hotel Indigo 22-slide methodology ──────────────────────────────────────
+
+class IndigoTagline(BaseModel):
+    zh: str    # e.g. "弄里·申韵"
+    sub: str   # e.g. "石库门里的上海精气神"
+
+
+class IndigoOrigin(BaseModel):
+    title: str     # e.g. "邻间背景与生活风貌"
+    headline: str  # strong opening sentence
+    body: str      # ~120 chars
+
+
+class IndigoBeat(BaseModel):
+    num: str           # "01"–"06"
+    name_zh: str       # "石·门·迎·耀"  (use · as separator)
+    space_zh: str      # fixed hotel space label
+    ghost_en: str      # "ARRIVAL\nTHE GATE"  (\n for line break)
+    narrative: str     # ~60 chars connecting location story to space
+    tagline: str       # ≤15 chars, the beat's single slogan
+    mb_ghost_en: str   # moodboard left-col ghost EN (2-3 words, \n separated)
+    mb_concept: str    # moodboard concept title (6-8 chars)
+    mb_concept_sub: str
+    mb_col2_title: str
+    mb_col2_accent: str
+    mb_col2_body: str  # ~80 chars
+    mb_col3_title: str
+    mb_col3_accent: str
+    mb_col3_body: str  # ~80 chars
+
+
+class IndigoStoryUnit(BaseModel):
+    city: str
+    district: str
+    hotel_en: str               # e.g. "Shanghai Xintiandi"
+    taglines: list[IndigoTagline] = Field(min_length=3, max_length=3)
+    concept_poem: list[str]     # 2 paragraphs for brand concept cinematic
+    origins: list[IndigoOrigin] = Field(min_length=3, max_length=3)
+    emotion_headline: str       # e.g. "「石」库门的开启，「弄」里时光的流淌"
+    emotion_poem: list[str]     # 2 paragraphs for story emotion cinematic
+    story_summary: str          # ~60 chars for story summary slide
+    beats: list[IndigoBeat] = Field(min_length=6, max_length=6)
+
+
+class IndigoGenerateRequest(BaseModel):
+    city: str
+    district: str
+    hotel_en: Optional[str] = None
