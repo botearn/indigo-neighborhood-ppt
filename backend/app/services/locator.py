@@ -39,7 +39,12 @@ geocode_place 失败时的处理：
 - 用户说"对就这个" 但你**没有任何 geocode 命中** → 不要 confirm；告诉用户你没搜到，请换一个地标
 - 不匹配（比如"四川"误中了"香港四川街"）→ 不要 confirm
 
-回复风格：节制、有人味、3 句以内。中文。语气参考汪曾祺写街区——具体、不煽情。回复就是普通中文文本，不要 JSON、不要 markdown。"""
+回复风格：节制、有人味、3 句以内。中文。语气参考汪曾祺写街区——具体、不煽情。
+
+**格式铁律（违反即错）**：
+- 你的回复文本里绝对不能出现花括号 `{` `}`、JSON 键值对、工具调用的参数或返回值的任何片段。
+- 工具的输入和输出只在你内部使用，**绝对不能粘贴进回复文本**。
+- 回复就是纯粹的中文口语句子，不要 JSON，不要 markdown，不要代码块。"""
 
 
 TOOLS = [
@@ -215,10 +220,17 @@ async def locate(req: LocateRequest) -> LocateResponse:
                     committed = geocoded[display]
                     content = json.dumps({"ok": True}, ensure_ascii=False)
                 else:
-                    content = json.dumps(
-                        {"ok": False, "error": "display 必须是之前 geocode_place 实际返回过的字符串"},
-                        ensure_ascii=False,
-                    )
+                    # display may come from a previous conversation turn; try to recover via geocode
+                    recovered = await _mapbox_geocode(display) if display else None
+                    if recovered:
+                        geocoded[recovered["display"]] = recovered
+                        committed = recovered
+                        content = json.dumps({"ok": True}, ensure_ascii=False)
+                    else:
+                        content = json.dumps(
+                            {"ok": False, "error": "display 必须是之前 geocode_place 实际返回过的字符串"},
+                            ensure_ascii=False,
+                        )
             else:
                 content = json.dumps({"error": f"unknown tool {name}"}, ensure_ascii=False)
 
