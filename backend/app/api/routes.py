@@ -27,8 +27,10 @@ router = APIRouter(prefix="/api")
 @router.post("/indigo/generate", response_model=IndigoStoryUnit)
 async def indigo_generate(req: IndigoGenerateRequest):
     try:
-        return await indigo_generator.generate_indigo(req)
+        story = await indigo_generator.generate_indigo(req)
+        return await image_generator.generate_indigo_images(story)
     except Exception as e:
+        import traceback; traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -3,6 +3,7 @@ Builds a fully-editable 22-slide PPTX from IndigoStoryUnit using python-pptx.
 All text elements are real text boxes (not screenshots), fonts and colors are
 applied programmatically. Image areas are placeholder shapes.
 """
+import base64
 from io import BytesIO
 from pptx import Presentation
 from pptx.util import Cm, Pt, Emu
@@ -171,13 +172,45 @@ def _page_num(slide, n: int, dark: bool = False):
 
 
 def _img_placeholder(slide, left, top, width, height, label: str = "",
-                     bg: RGBColor = RGBColor(0xCC, 0xD4, 0xD4)):
+                     bg: RGBColor = RGBColor(0xCC, 0xD4, 0xD4),
+                     image_url: str | None = None):
+    if image_url:
+        img_stream = _resolve_image(image_url)
+        if img_stream:
+            slide.shapes.add_picture(img_stream, left, top, width, height)
+            return
     _add_rect(slide, left, top, width, height, fill=bg)
     if label:
         _add_text(slide, f"[ {label} ]",
                   left + Cm(0.3), top + height - Cm(0.7),
                   width - Cm(0.6), Cm(0.6),
                   size=5, color=RGBColor(0xAA, 0xAA, 0xAA))
+
+
+def _resolve_image(url: str) -> BytesIO | None:
+    """Turn a data:…;base64 URL or http(s) URL into a JPEG BytesIO for python-pptx."""
+    if not url:
+        return None
+    try:
+        raw: bytes | None = None
+        if url.startswith("data:"):
+            _, payload = url.split(",", 1)
+            raw = base64.b64decode(payload)
+        elif url.startswith("http"):
+            import httpx
+            r = httpx.get(url, timeout=30, follow_redirects=True)
+            r.raise_for_status()
+            raw = r.content
+        if raw:
+            from PIL import Image
+            img = Image.open(BytesIO(raw))
+            buf = BytesIO()
+            img.convert("RGB").save(buf, format="JPEG", quality=85)
+            buf.seek(0)
+            return buf
+    except Exception:
+        pass
+    return None
 
 
 # ── Slide builders ────────────────────────────────────────────────────────
@@ -254,9 +287,12 @@ def _slide_origin(prs, n: int, s: IndigoStoryUnit, idx: int):
     _hbar(slide, s.city, s.district)
     _sec_label(slide, "STORYLINE CONCEPT", "故事概念方向")
     o = s.origins[idx]
+    # origin 页用对应 beat 的图片
+    beat_img = s.beats[idx].image_url if idx < len(s.beats) else None
     photo_w = Cm(11)
     _img_placeholder(slide, 0, Cm(1.2), photo_w, SH - Cm(1.2),
-                     label=o.title, bg=ORIGIN_BG[idx])
+                     label=o.title, bg=ORIGIN_BG[idx],
+                     image_url=beat_img)
     tx = photo_w + Cm(0.5)
     tw = SW - tx - Cm(0.5)
     _add_text(slide, f"○ ORIGIN  ·  {o.title}",
@@ -376,7 +412,8 @@ def _slide_beat_cover(prs, n: int, beat: IndigoBeat):
     _img_placeholder(slide, panel_w + Cm(0.3), Cm(0.5),
                      SW - panel_w - Cm(0.3), SH - Cm(1),
                      label="Photo placeholder",
-                     bg=RGBColor(0x22, 0x22, 0x22))
+                     bg=RGBColor(0x22, 0x22, 0x22),
+                     image_url=beat.image_url)
     _page_num(slide, n)
 
 
@@ -418,7 +455,8 @@ def _slide_moodboard(prs, n: int, beat: IndigoBeat, s: IndigoStoryUnit):
     # Col 1 image placeholder
     img_top = bar_y + Cm(5.2)
     _img_placeholder(slide, Cm(0.5), img_top, c1_w - Cm(0.8), SH - img_top - Cm(0.3),
-                     bg=RGBColor(0xC8, 0xD4, 0xD4))
+                     bg=RGBColor(0xC8, 0xD4, 0xD4),
+                     image_url=beat.mood_image_url)
 
     # Col 2
     _add_text(slide, beat.mb_col2_title,
@@ -435,11 +473,13 @@ def _slide_moodboard(prs, n: int, beat: IndigoBeat, s: IndigoStoryUnit):
     img_h1 = Cm(2.4)
     img_h2 = Cm(1.7)
     _img_placeholder(slide, c2_x + Cm(0.5), img_y, (c2_w - Cm(1.2)) / 2, img_h1,
-                     bg=RGBColor(0xCC, 0xCC, 0xBB))
+                     bg=RGBColor(0xCC, 0xCC, 0xBB), image_url=beat.col2_image_url)
     _img_placeholder(slide, c2_x + Cm(0.5) + (c2_w - Cm(1.2)) / 2 + Cm(0.15), img_y,
-                     (c2_w - Cm(1.2)) / 2, img_h1, bg=RGBColor(0xCC, 0xCC, 0xBB))
+                     (c2_w - Cm(1.2)) / 2, img_h1, bg=RGBColor(0xCC, 0xCC, 0xBB),
+                     image_url=beat.col2_image_url)
     _img_placeholder(slide, c2_x + Cm(0.5), img_y + img_h1 + Cm(0.15),
-                     c2_w - Cm(1.0), img_h2, bg=RGBColor(0xCC, 0xCC, 0xBB))
+                     c2_w - Cm(1.0), img_h2, bg=RGBColor(0xCC, 0xCC, 0xBB),
+                     image_url=beat.col2_image_url)
 
     # Col 3
     _add_text(slide, beat.mb_col3_title,
@@ -452,12 +492,15 @@ def _slide_moodboard(prs, n: int, beat: IndigoBeat, s: IndigoStoryUnit):
               c3_x + Cm(0.5), bar_y + Cm(1.7), c3_w - Cm(0.8), Cm(3.5),
               size=7, color=GRAY_D, wrap=True, line_spacing=12)
     _img_placeholder(slide, c3_x + Cm(0.5), bar_y + Cm(5.4),
-                     c3_w - Cm(1.0), Cm(3.4), bg=RGBColor(0xCC, 0xCC, 0xBB))
+                     c3_w - Cm(1.0), Cm(3.4), bg=RGBColor(0xCC, 0xCC, 0xBB),
+                     image_url=beat.col3_image_url)
     _img_placeholder(slide, c3_x + Cm(0.5), bar_y + Cm(9.0),
-                     (c3_w - Cm(1.2)) / 2, Cm(1.8), bg=RGBColor(0xCC, 0xCC, 0xBB))
+                     (c3_w - Cm(1.2)) / 2, Cm(1.8), bg=RGBColor(0xCC, 0xCC, 0xBB),
+                     image_url=beat.col3_image_url)
     _img_placeholder(slide, c3_x + Cm(0.5) + (c3_w - Cm(1.2)) / 2 + Cm(0.15),
                      bar_y + Cm(9.0), (c3_w - Cm(1.2)) / 2, Cm(1.8),
-                     bg=RGBColor(0xCC, 0xCC, 0xBB))
+                     bg=RGBColor(0xCC, 0xCC, 0xBB),
+                     image_url=beat.col3_image_url)
 
     _page_num(slide, n, dark=True)
 

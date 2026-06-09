@@ -176,14 +176,19 @@ function SlideCinematic({ n, bg, headline, paras, topLabel }: {
 function SlideOrigin({ n, s, idx }: { n: number; s: IndigoStoryUnit; idx: number }) {
   const o = s.origins[idx]
   const isTwo = idx === 1  // origin 2 has a 2-col layout with map
+  const beatImg = s.beats[idx]?.image_url
   return (
     <div style={{ width: W, height: H, background: T.white, position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
       <HBar city={s.city} district={s.district} />
       <SecLabel en="STORYLINE CONCEPT" zh="故事概念方向" />
-      {/* Photo placeholder left */}
-      <div style={{ position: 'absolute', top: 58, left: 0, width: 320, bottom: 0, background: ORIGIN_BG[idx], display: 'flex', alignItems: 'flex-end', padding: '10px 14px' }}>
-        <span style={{ fontSize: 6, color: 'rgba(255,255,255,.25)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Photo placeholder · {o.title}</span>
-      </div>
+      {/* Photo left */}
+      {beatImg ? (
+        <img src={beatImg} alt="" style={{ position: 'absolute', top: 58, left: 0, width: 320, bottom: 0, height: 'calc(100% - 58px)', objectFit: 'cover' }} />
+      ) : (
+        <div style={{ position: 'absolute', top: 58, left: 0, width: 320, bottom: 0, background: ORIGIN_BG[idx], display: 'flex', alignItems: 'flex-end', padding: '10px 14px' }}>
+          <span style={{ fontSize: 6, color: 'rgba(255,255,255,.25)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Photo placeholder · {o.title}</span>
+        </div>
+      )}
       {/* Body right */}
       <div style={{ position: 'absolute', top: 58, left: 330, right: 0, bottom: 0, padding: '18px 22px 18px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 6, color: T.teal, letterSpacing: '0.15em', textTransform: 'uppercase' }}>○ ORIGIN · {o.title}</div>
@@ -231,8 +236,9 @@ function SlideStoryMapping({ n, s }: { n: number; s: IndigoStoryUnit }) {
       <div style={{ position: 'absolute', top: 90, left: 28, right: 28, height: 350, display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 5 }}>
         {s.beats.map((b, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, background: colors[i], borderRadius: 1, position: 'relative', minHeight: 0 }}>
-              <div style={{ position: 'absolute', top: 7, left: 7, fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,.7)' }}>{b.num}</div>
+            <div style={{ flex: 1, borderRadius: 1, position: 'relative', minHeight: 0, overflow: 'hidden', background: colors[i] }}>
+              {b.image_url && <img src={b.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+              <div style={{ position: 'absolute', top: 7, left: 7, fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,.7)', zIndex: 1, textShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{b.num}</div>
             </div>
             <div style={{ fontSize: 7, fontWeight: 600, color: T.navy, textAlign: 'center', marginTop: 5, lineHeight: 1.4 }}>{b.name_zh}</div>
             <div style={{ fontSize: 5.5, color: T.grayM, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2, lineHeight: 1.4 }}>{b.space_zh}</div>
@@ -280,8 +286,12 @@ function SlideBeatCover({ n, beat }: { n: number; beat: IndigoBeat }) {
         <div style={{ fontSize: 7.5, color: T.tealLt, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 7 }}>在这里 · ZAI ZHE LI</div>
         <div style={{ fontSize: 11, fontWeight: 600, color: T.white, lineHeight: 1.6, letterSpacing: '0.02em' }}>{beat.tagline}</div>
       </div>
-      {/* Right image placeholder */}
-      <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, left: '44%', background: 'rgba(0,0,0,.15)' }} />
+      {/* Right image */}
+      {beat.image_url ? (
+        <img src={beat.image_url} alt="" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, left: '44%', width: '56%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, left: '44%', background: 'rgba(0,0,0,.15)' }} />
+      )}
       <PageNum n={n} />
     </div>
   )
@@ -306,7 +316,11 @@ function SlideMoodboard({ n, beat, s }: { n: number; beat: IndigoBeat; s: Indigo
           <div style={{ fontSize: 6, color: T.teal, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 8 }}>运用元素</div>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.navy, lineHeight: 1.3, marginBottom: 3 }}>{beat.mb_concept}</div>
           <div style={{ fontSize: 7, color: T.grayM, marginBottom: 8 }}>{beat.mb_concept_sub}</div>
-          <div style={{ height: 108, borderRadius: 1, background: col1Bg, marginTop: 6 }} />
+          {beat.mood_image_url ? (
+            <img src={beat.mood_image_url} alt="" style={{ height: 108, width: '100%', borderRadius: 1, objectFit: 'cover', marginTop: 6 }} />
+          ) : (
+            <div style={{ height: 108, borderRadius: 1, background: col1Bg, marginTop: 6 }} />
+          )}
         </div>
         {/* Col 2 */}
         <div style={{ padding: '16px 18px', borderRight: '1px solid #f0f0ee', overflow: 'hidden' }}>
@@ -314,9 +328,19 @@ function SlideMoodboard({ n, beat, s }: { n: number; beat: IndigoBeat; s: Indigo
           <div style={{ fontSize: 8, fontWeight: 700, color: T.teal, marginBottom: 5, letterSpacing: '0.02em' }}>{beat.mb_col2_accent}</div>
           <div style={{ fontSize: 7, color: T.grayD, lineHeight: 1.85, marginBottom: 7 }}>{beat.mb_col2_body}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-            <div style={{ height: 66, borderRadius: 1, background: phBg }} />
-            <div style={{ height: 66, borderRadius: 1, background: phBg }} />
-            <div style={{ height: 46, borderRadius: 1, background: phBg, gridColumn: '1/-1' }} />
+            {(beat.col2_image_url || beat.image_url) ? (
+              <>
+                <img src={beat.col2_image_url || beat.image_url} alt="" style={{ height: 66, width: '100%', borderRadius: 1, objectFit: 'cover' }} />
+                <img src={beat.col2_image_url || beat.image_url} alt="" style={{ height: 66, width: '100%', borderRadius: 1, objectFit: 'cover', objectPosition: 'right' }} />
+                <img src={beat.col2_image_url || beat.image_url} alt="" style={{ height: 46, width: '100%', borderRadius: 1, objectFit: 'cover', objectPosition: 'center top', gridColumn: '1/-1' }} />
+              </>
+            ) : (
+              <>
+                <div style={{ height: 66, borderRadius: 1, background: phBg }} />
+                <div style={{ height: 66, borderRadius: 1, background: phBg }} />
+                <div style={{ height: 46, borderRadius: 1, background: phBg, gridColumn: '1/-1' }} />
+              </>
+            )}
           </div>
         </div>
         {/* Col 3 */}
@@ -324,10 +348,23 @@ function SlideMoodboard({ n, beat, s }: { n: number; beat: IndigoBeat; s: Indigo
           <div style={{ fontSize: 8, fontWeight: 700, color: T.navy, marginBottom: 3, letterSpacing: '0.04em' }}>{beat.mb_col3_title}</div>
           <div style={{ fontSize: 8, fontWeight: 700, color: T.teal, marginBottom: 5, letterSpacing: '0.02em' }}>{beat.mb_col3_accent}</div>
           <div style={{ fontSize: 7, color: T.grayD, lineHeight: 1.85, marginBottom: 7 }}>{beat.mb_col3_body}</div>
-          <div style={{ height: 98, borderRadius: 1, background: phBg, marginBottom: 4 }} />
+          {(beat.col3_image_url || beat.mood_image_url) ? (
+            <img src={beat.col3_image_url || beat.mood_image_url} alt="" style={{ height: 98, width: '100%', borderRadius: 1, objectFit: 'cover', marginBottom: 4 }} />
+          ) : (
+            <div style={{ height: 98, borderRadius: 1, background: phBg, marginBottom: 4 }} />
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-            <div style={{ height: 48, borderRadius: 1, background: phBg }} />
-            <div style={{ height: 48, borderRadius: 1, background: phBg }} />
+            {(beat.col3_image_url || beat.mood_image_url) ? (
+              <>
+                <img src={beat.col3_image_url || beat.mood_image_url} alt="" style={{ height: 48, width: '100%', borderRadius: 1, objectFit: 'cover', objectPosition: 'left' }} />
+                <img src={beat.col3_image_url || beat.mood_image_url} alt="" style={{ height: 48, width: '100%', borderRadius: 1, objectFit: 'cover', objectPosition: 'right' }} />
+              </>
+            ) : (
+              <>
+                <div style={{ height: 48, borderRadius: 1, background: phBg }} />
+                <div style={{ height: 48, borderRadius: 1, background: phBg }} />
+              </>
+            )}
           </div>
         </div>
       </div>

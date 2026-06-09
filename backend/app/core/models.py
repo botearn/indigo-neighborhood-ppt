@@ -158,6 +158,10 @@ class IndigoBeat(BaseModel):
     mb_col3_title: str
     mb_col3_accent: str
     mb_col3_body: str  # ~80 chars
+    image_url: Optional[str] = None        # BeatCover 主图 / Origin 页
+    mood_image_url: Optional[str] = None   # Moodboard col1 底部
+    col2_image_url: Optional[str] = None   # Moodboard col2 图片网格
+    col3_image_url: Optional[str] = None   # Moodboard col3 图片
 
 
 class IndigoStoryUnit(BaseModel):
@@ -177,3 +181,9 @@ class IndigoGenerateRequest(BaseModel):
     city: str
     district: str
     hotel_en: Optional[str] = None
+
+
+class IndigoEditBeatRequest(BaseModel):
+    story_unit: IndigoStoryUnit
+    beat_index: int          # 0-5
+    instruction: str

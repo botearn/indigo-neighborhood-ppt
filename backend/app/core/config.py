@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     feishu_verification_token: str = ""
     feishu_api_base: str = "https://open.feishu.cn/open-apis"
     mapbox_token: str = ""
+    relay_base_url: str = "https://api.tokenrouter.com/v1"
+    relay_api_key: str = ""
+    relay_image_model: str = "openai/gpt-5.4-image-2"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

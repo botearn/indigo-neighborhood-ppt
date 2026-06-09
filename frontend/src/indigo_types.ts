@@ -25,6 +25,10 @@ export interface IndigoBeat {
   mb_col3_title: string
   mb_col3_accent: string
   mb_col3_body: string
+  image_url?: string
+  mood_image_url?: string
+  col2_image_url?: string
+  col3_image_url?: string
 }
 
 export interface IndigoStoryUnit {
