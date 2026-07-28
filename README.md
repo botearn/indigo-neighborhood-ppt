@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python--pptx-1.0-3776AB?logo=python&logoColor=fff" alt="python-pptx" />
   <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=fff" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Mapbox_GL-3-000?logo=mapbox&logoColor=fff" alt="Mapbox GL" />
-  <img src="https://img.shields.io/badge/deploy-Koyeb-121212?logo=koyeb&logoColor=fff" alt="Koyeb" />
+  <img src="https://img.shields.io/badge/deploy-Fly.io-8B5CF6?logo=flydotio&logoColor=fff" alt="Fly.io" />
 </p>
 
 ---
@@ -142,22 +142,22 @@ Open **http://localhost:5173** — pick FastLane or Guided, enter a neighbourhoo
 
 ## Deployment
 
-Production-style demos are deployed with **Koyeb** for the FastAPI backend and **Vercel** for the frontend.
+Production-style demos are deployed with **Fly.io** for the FastAPI backend and **Vercel** for the frontend.
 
 Backend:
 
-- Koyeb Web Service
-- GitHub deployment with autodeploy enabled
+- Fly.io app deployed by GitHub Actions
 - Dockerfile builder
-- Work directory: `backend`
+- Docker context: `backend`
+- Config: `backend/fly.toml`
 - Health check: `GET /health`
 
 Frontend:
 
 - Vercel static build from `frontend`
-- `VITE_API_BASE_URL` points to the Koyeb backend domain
+- `VITE_API_BASE_URL` points to the Fly backend domain
 
-See [docs/koyeb-deployment.md](docs/koyeb-deployment.md) for the deployment checklist, environment variables, and validation commands. The old `render.yaml` is kept only as legacy Render configuration.
+See [docs/fly-deployment.md](docs/fly-deployment.md) for the deployment checklist, environment variables, and validation commands. The old `render.yaml` is kept only as legacy Render configuration.
 
 ---
 
@@ -191,6 +191,7 @@ The slide renderer follows Hotel Indigo's visual identity:
 │   │       ├── locator.py           # Mapbox + NLP geolocation
 │   │       └── generator.py         # Legacy 6-beat story gen
 │   ├── Dockerfile
+│   ├── fly.toml                     # Fly.io backend deployment config
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
@@ -203,6 +204,7 @@ The slide renderer follows Hotel Indigo's visual identity:
 │   ├── package.json
 │   └── vite.config.ts
 ├── render.yaml                      # Legacy Render deployment manifest
+├── .github/workflows/fly-backend.yml # Fly.io backend deployment workflow
 └── indigo-ppt-methodology.md        # 22-slide framework & prompt scripts
 ```
 
