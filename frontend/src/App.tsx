@@ -392,18 +392,6 @@ export default function App() {
     setStory({ ...story, beats })
   }
 
-  function handleFastDone(result: StoryUnit) {
-    setStory(result)
-    setStep(4)
-    setMessages([{
-      role: 'agent',
-      content: `生成完成。${result.city}·${result.neighborhood} 的 6 个 beat 和图片都到了，调一下排版再导出。`,
-      timestamp: now(),
-      step: 4,
-    }])
-    setAppMode('guided')
-  }
-
   function handleJump(target: number) {
     if (target === 1) {
       setStep(1)
@@ -527,7 +515,7 @@ export default function App() {
   }
 
   if (appMode === 'fast') {
-    return <FastLane onDone={handleFastDone} onBack={() => setAppMode('home')} />
+    return <FastLane onBack={() => setAppMode('home')} />
   }
 
   return (

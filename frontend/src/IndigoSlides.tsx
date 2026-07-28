@@ -94,15 +94,6 @@ function PageNum({ n, dark }: { n: number; dark?: boolean }) {
   )
 }
 
-function ImgPh({ style }: { style?: React.CSSProperties }) {
-  return (
-    <div style={{
-      background: 'linear-gradient(135deg,#dde4e4 0%,#c8d4d4 100%)',
-      borderRadius: 1, ...style,
-    }} />
-  )
-}
-
 // ── Slide types ───────────────────────────────────────────────────────────
 
 function Slide01Cover({ s }: { s: IndigoStoryUnit }) {
