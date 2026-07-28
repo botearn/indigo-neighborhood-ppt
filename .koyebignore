@@ -1,0 +1,10 @@
+frontend/
+docs/
+*.md
+*.csv
+*.png
+*.jpg
+*.jpeg
+*.webp
+render.yaml
+AGENTS.md

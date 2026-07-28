@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python--pptx-1.0-3776AB?logo=python&logoColor=fff" alt="python-pptx" />
   <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=fff" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Mapbox_GL-3-000?logo=mapbox&logoColor=fff" alt="Mapbox GL" />
-  <img src="https://img.shields.io/badge/deploy-Render-46E3B7?logo=render&logoColor=fff" alt="Render" />
+  <img src="https://img.shields.io/badge/deploy-Koyeb-121212?logo=koyeb&logoColor=fff" alt="Koyeb" />
 </p>
 
 ---
@@ -142,19 +142,22 @@ Open **http://localhost:5173** — pick FastLane or Guided, enter a neighbourhoo
 
 ## Deployment
 
-Production is deployed on **Render** (backend) + **Vercel** (frontend) via `render.yaml`:
+Production-style demos are deployed with **Koyeb** for the FastAPI backend and **Vercel** for the frontend.
 
-```yaml
-# render.yaml — Docker service, Singapore region, auto-deploy on push
-services:
-  - type: web
-    name: indigo-ppt-backend
-    runtime: docker
-    region: singapore
-    healthCheckPath: /health
-```
+Backend:
 
-Environment secrets (Render dashboard): `OPENAI_API_KEY`, `MAPBOX_TOKEN`, `FAL_KEY`, `GEMINI_API_KEY`, etc.
+- Koyeb Web Service
+- GitHub deployment with autodeploy enabled
+- Dockerfile builder
+- Work directory: `backend`
+- Health check: `GET /health`
+
+Frontend:
+
+- Vercel static build from `frontend`
+- `VITE_API_BASE_URL` points to the Koyeb backend domain
+
+See [docs/koyeb-deployment.md](docs/koyeb-deployment.md) for the deployment checklist, environment variables, and validation commands. The old `render.yaml` is kept only as legacy Render configuration.
 
 ---
 
@@ -199,7 +202,7 @@ The slide renderer follows Hotel Indigo's visual identity:
 │   │   └── api.ts                   # Backend HTTP client
 │   ├── package.json
 │   └── vite.config.ts
-├── render.yaml                      # Render deployment manifest
+├── render.yaml                      # Legacy Render deployment manifest
 └── indigo-ppt-methodology.md        # 22-slide framework & prompt scripts
 ```
 
