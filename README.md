@@ -140,6 +140,12 @@ Open **http://localhost:5173** — pick FastLane or Guided, enter a neighbourhoo
 
 ---
 
+## Demo Auth & History
+
+The current demo includes email/password login, protected generation/export APIs, and per-user generation history backed by local SQLite. See [docs/auth-history-demo.md](docs/auth-history-demo.md) for current scope, verification commands, and production gaps.
+
+---
+
 ## Deployment
 
 Production-style demos are deployed with **Fly.io** for the FastAPI backend and **Vercel** for the frontend.
@@ -180,8 +186,10 @@ The slide renderer follows Hotel Indigo's visual identity:
 ```
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes.py            # All endpoints
+│   │   ├── api/auth.py              # Login, registration, current user, logout
+│   │   ├── api/routes.py            # Protected generation, history, and export endpoints
 │   │   ├── core/
+│   │   │   ├── auth.py              # SQLite auth/session/history store
 │   │   │   ├── config.py            # Env-based settings
 │   │   │   └── models.py            # Pydantic schemas
 │   │   └── services/
@@ -192,10 +200,12 @@ The slide renderer follows Hotel Indigo's visual identity:
 │   │       └── generator.py         # Legacy 6-beat story gen
 │   ├── Dockerfile
 │   ├── fly.toml                     # Fly.io backend deployment config
-│   └── requirements.txt
+│   ├── requirements.txt
+│   └── tests/test_auth_flow.py      # Auth/history regression coverage
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx                  # Main state machine (5 steps)
+│   │   ├── AuthScreen.tsx           # Demo login/register UI
 │   │   ├── FastLane.tsx             # One-click generation UI
 │   │   ├── IndigoSlides.tsx         # 22-slide design-system renderer
 │   │   ├── indigo_types.ts          # TS interfaces for story schema

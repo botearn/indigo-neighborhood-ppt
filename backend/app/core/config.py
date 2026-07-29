@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     relay_base_url: str = "https://api.tokenrouter.com/v1"
     relay_api_key: str = ""
     relay_image_model: str = "openai/gpt-5.4-image-2"
+    auth_db_path: str = "data/indigo.db"
+    session_ttl_days: int = 30
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
