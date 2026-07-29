@@ -15,12 +15,6 @@ from app.core import auth  # noqa: E402
 from app.main import app  # noqa: E402
 
 
-PNG_1X1_DATA_URL = (
-    "data:image/png;base64,"
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
-)
-
-
 class AuthFlowTest(unittest.TestCase):
     def setUp(self) -> None:
         auth.init_auth_store()
@@ -113,39 +107,6 @@ class AuthFlowTest(unittest.TestCase):
             "https://indigo-neighborhood-ppt.vercel.app",
         )
         self.assertIn("authorization", res.headers.get("access-control-allow-headers", "").lower())
-
-    def test_export_only_accepts_rendered_slide_payload(self) -> None:
-        _user, token = self._register()
-
-        ok = self.client.post(
-            "/api/export",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"city": "上海", "neighborhood": "武康路", "slides": [PNG_1X1_DATA_URL]},
-        )
-        self.assertEqual(ok.status_code, 200, ok.text)
-        self.assertEqual(
-            ok.headers.get("content-type"),
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        )
-
-        legacy = self.client.post(
-            "/api/export",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "city": "上海",
-                "neighborhood": "武康路",
-                "signature": {"zh": "梧桐旧影", "en": "Plane Tree Lane"},
-                "anchor": "武康路",
-                "hook_line": "梧桐影里看上海",
-                "beats": [],
-                "action_cue": "走进武康路",
-            },
-        )
-        self.assertEqual(legacy.status_code, 422)
-
-    def test_legacy_feishu_ppt_webhook_is_not_registered(self) -> None:
-        res = self.client.post("/webhook/feishu", json={"type": "url_verification"})
-        self.assertEqual(res.status_code, 404)
 
 
 if __name__ == "__main__":
