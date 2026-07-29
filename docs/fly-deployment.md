@@ -11,6 +11,7 @@ This project deploys the FastAPI backend to Fly.io through GitHub Actions. Do no
 - Backend Docker context: `backend`
 - Health check: `GET /health`
 - Build mode: Fly remote builder, so local Docker is not required
+- Auth/history storage: SQLite on the Fly volume `indigo_data`, mounted at `/data`
 
 ## One-Time Fly Setup
 
@@ -43,6 +44,14 @@ fly secrets set \
   --stage \
   --app indigo-ppt-backend
 ```
+
+The checked-in Fly config sets:
+
+```text
+AUTH_DB_PATH=/data/indigo.db
+```
+
+The GitHub Actions deployment workflow creates the `indigo_data` volume in `sin` if it is missing before deployment. This keeps demo users, sessions, and generation history across app deploys.
 
 Optional provider secrets, depending on the selected provider:
 

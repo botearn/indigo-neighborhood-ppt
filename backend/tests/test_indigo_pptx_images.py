@@ -1,0 +1,89 @@
+import base64
+import io
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from PIL import Image  # noqa: E402
+from pptx import Presentation  # noqa: E402
+from pptx.enum.shapes import MSO_SHAPE_TYPE  # noqa: E402
+
+from app.core.models import IndigoBeat, IndigoOrigin, IndigoStoryUnit, IndigoTagline  # noqa: E402
+from app.services.indigo_pptx_builder import build_indigo_pptx  # noqa: E402
+
+
+def _image_url(seed: int) -> str:
+    color = ((seed * 45) % 255, (seed * 75) % 255, (seed * 105) % 255)
+    image = Image.new("RGB", (16, 12), color)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    payload = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{payload}"
+
+
+def _beat(num: int) -> IndigoBeat:
+    image = _image_url(num)
+    return IndigoBeat(
+        num=f"{num:02d}",
+        name_zh=f"第{num}幕",
+        space_zh=f"空间{num}",
+        ghost_en=f"BEAT\n{num}",
+        narrative=f"这是第{num}幕的故事叙述，用于检查导出图片是否被合理分配。",
+        tagline=f"标语{num}",
+        mb_ghost_en=f"MOOD\n{num}",
+        mb_concept=f"概念{num}",
+        mb_concept_sub=f"副标题{num}",
+        mb_col2_title=f"第二栏标题{num}",
+        mb_col2_accent=f"第二栏强调{num}",
+        mb_col2_body=f"第二栏正文{num}",
+        mb_col3_title=f"第三栏标题{num}",
+        mb_col3_accent=f"第三栏强调{num}",
+        mb_col3_body=f"第三栏正文{num}",
+        image_url=image,
+        mood_image_url=_image_url(num + 10),
+        col2_image_url=_image_url(num + 20),
+        col3_image_url=_image_url(num + 30),
+    )
+
+
+def _story() -> IndigoStoryUnit:
+    return IndigoStoryUnit(
+        city="上海",
+        district="武康路",
+        hotel_en="Shanghai Wukang Road",
+        taglines=[
+            IndigoTagline(zh="梧里光影", sub="街巷里的日常光线"),
+            IndigoTagline(zh="路上旧梦", sub="老建筑与新生活"),
+            IndigoTagline(zh="转角日常", sub="把街区带进酒店"),
+        ],
+        concept_poem=["第一段概念文本。", "第二段概念文本。"],
+        origins=[
+            IndigoOrigin(title="背景", headline="街区背景标题", body="街区背景正文。"),
+            IndigoOrigin(title="人群", headline="人群生活标题", body="人群生活正文。"),
+            IndigoOrigin(title="空间", headline="空间转译标题", body="空间转译正文。"),
+        ],
+        emotion_headline="「街」与「店」之间的日常流动",
+        emotion_poem=["第一段情绪文本。", "第二段情绪文本。"],
+        story_summary="以街区日常作为酒店触点的叙事线索。",
+        beats=[_beat(i) for i in range(1, 7)],
+    )
+
+
+def _picture_count(slide) -> int:
+    return sum(1 for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE)
+
+
+class IndigoPptxImagesTest(unittest.TestCase):
+    def test_first_ten_slides_allocate_available_beat_images(self) -> None:
+        deck = Presentation(io.BytesIO(build_indigo_pptx(_story())))
+
+        self.assertEqual(len(deck.slides), 22)
+        for slide_no in range(1, 11):
+            with self.subTest(slide_no=slide_no):
+                self.assertGreater(_picture_count(deck.slides[slide_no - 1]), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -187,6 +187,18 @@ def _img_placeholder(slide, left, top, width, height, label: str = "",
                   size=5, color=RGBColor(0xAA, 0xAA, 0xAA))
 
 
+def _beat_image(s: IndigoStoryUnit, idx: int, *fields: str) -> str | None:
+    if not s.beats:
+        return None
+    beat = s.beats[idx % len(s.beats)]
+    image_fields = fields or ("image_url", "mood_image_url", "col2_image_url", "col3_image_url")
+    for field in image_fields:
+        url = getattr(beat, field, None)
+        if url:
+            return url
+    return None
+
+
 def _resolve_image(url: str) -> BytesIO | None:
     """Turn a data:…;base64 URL or http(s) URL into a JPEG BytesIO for python-pptx."""
     if not url:
@@ -220,6 +232,12 @@ def _slide01_cover(prs, s: IndigoStoryUnit):
     _set_bg(slide, BG_DARK)
     _hbar(slide, s.city, s.district)
 
+    cover_image = _beat_image(s, 0, "image_url", "mood_image_url", "col2_image_url", "col3_image_url")
+    if cover_image:
+        _img_placeholder(slide, SW * 0.52, Cm(1.2), SW * 0.48, SH - Cm(1.2),
+                         bg=BG_DARK, image_url=cover_image)
+        _add_rect(slide, SW * 0.50, Cm(1.2), Cm(0.25), SH - Cm(1.2), fill=BG_DARK)
+
     _add_text(slide, "HOTEL", Cm(1.5), SH - Cm(6.5), Cm(15), Cm(1),
               size=8, color=RGBColor(0x80, 0x80, 0x80), spacing=0.3)
     _add_text(slide, "INDIGO", Cm(1.5), SH - Cm(5.8), Cm(20), Cm(2.2),
@@ -243,6 +261,7 @@ def _slide02_taglines(prs, s: IndigoStoryUnit):
     for i, tl in enumerate(s.taglines):
         x = Cm(0.7) + col_w * i + Cm(0.2) * i
         border = TEAL if i == 0 else GRAY_L
+        image_url = _beat_image(s, i, "mood_image_url", "image_url", "col2_image_url", "col3_image_url")
         _add_rect(slide, x, Cm(2.3), col_w - Cm(0.15), SH - Cm(2.8),
                   fill=RGBColor(0xFA, 0xFF, 0xFF) if i == 0 else WHITE,
                   line_color=border, line_width=0.75)
@@ -256,26 +275,36 @@ def _slide02_taglines(prs, s: IndigoStoryUnit):
         _add_text(slide, tl.sub,
                   x + Cm(0.4), Cm(5.5), col_w - Cm(0.8), Cm(3.0),
                   size=8.5, color=GRAY_M, wrap=True, line_spacing=14)
+        _img_placeholder(slide, x + Cm(0.4), Cm(10.0), col_w - Cm(0.95), Cm(5.7),
+                         bg=RGBColor(0xEC, 0xF0, 0xF0), image_url=image_url)
     _page_num(slide, 2, dark=True)
 
 
 def _slide_cinematic(prs, n: int, s: IndigoStoryUnit, bg: RGBColor,
-                     headline: str, paras: list[str], top_label: str):
+                     headline: str, paras: list[str], top_label: str,
+                     image_url: str | None = None):
     slide = _new_slide(prs)
     _set_bg(slide, bg)
+    if image_url:
+        image_left = SW - Cm(9.6)
+        _img_placeholder(slide, image_left, Cm(1.2), Cm(9.6), SH - Cm(1.2),
+                         bg=bg, image_url=image_url)
+        _add_rect(slide, image_left - Cm(0.25), Cm(1.2), Cm(0.25), SH - Cm(1.2), fill=bg)
     _add_text(slide, top_label, Cm(0.8), Cm(0.6), Cm(10), Cm(0.5),
               size=6, color=RGBColor(0x80, 0x80, 0x80), spacing=0.2)
     _add_text(slide, "故事概念方向", Cm(0.8), Cm(1.0), Cm(10), Cm(0.5),
               size=5.5, color=RGBColor(0x55, 0x55, 0x55))
+    text_left = Cm(2.6)
+    text_width = SW - Cm(15) if image_url else SW - Cm(6)
     # Headline centered
     _add_text(slide, headline,
-              Cm(3), SH * 0.28, SW - Cm(6), Cm(3),
+              text_left, SH * 0.28, text_width, Cm(3),
               size=17, color=WHITE, align=PP_ALIGN.CENTER,
               font="Songti SC", wrap=True, line_spacing=28)
     # Paragraphs
     for i, para in enumerate(paras):
         _add_text(slide, para,
-                  Cm(4), SH * 0.52 + Cm(2.2) * i, SW - Cm(8), Cm(2),
+                  text_left + Cm(1), SH * 0.52 + Cm(2.2) * i, text_width - Cm(2), Cm(2),
                   size=8, color=RGBColor(0xAA, 0xAA, 0xAA),
                   align=PP_ALIGN.CENTER, wrap=True, line_spacing=14)
     _page_num(slide, n)
@@ -288,7 +317,7 @@ def _slide_origin(prs, n: int, s: IndigoStoryUnit, idx: int):
     _sec_label(slide, "STORYLINE CONCEPT", "故事概念方向")
     o = s.origins[idx]
     # origin 页用对应 beat 的图片
-    beat_img = s.beats[idx].image_url if idx < len(s.beats) else None
+    beat_img = _beat_image(s, idx, "image_url", "mood_image_url", "col2_image_url", "col3_image_url")
     photo_w = Cm(11)
     _img_placeholder(slide, 0, Cm(1.2), photo_w, SH - Cm(1.2),
                      label=o.title, bg=ORIGIN_BG[idx],
@@ -311,17 +340,25 @@ def _slide_origin(prs, n: int, s: IndigoStoryUnit, idx: int):
 def _slide_story_summary(prs, n: int, s: IndigoStoryUnit):
     slide = _new_slide(prs)
     _set_bg(slide, BG_SUMM)
+    image_url = _beat_image(s, 4, "mood_image_url", "image_url", "col2_image_url", "col3_image_url")
+    text_width = SW
+    if image_url:
+        image_w = Cm(10.2)
+        _img_placeholder(slide, SW - image_w, Cm(1.1), image_w, SH - Cm(1.1),
+                         bg=BG_SUMM, image_url=image_url)
+        _add_rect(slide, SW - image_w - Cm(0.25), Cm(1.1), Cm(0.25), SH - Cm(1.1), fill=BG_SUMM)
+        text_width = SW - image_w - Cm(0.5)
     _add_text(slide, "STORY SUMMARY", Cm(0.8), Cm(0.6), Cm(10), Cm(0.5),
               size=6, color=GRAY_M, spacing=0.2)
     _add_text(slide, f"Hotel Indigo {s.hotel_en}",
-              Cm(0), SH * 0.32, SW, Cm(0.8),
+              Cm(0), SH * 0.32, text_width, Cm(0.8),
               size=7, color=TEAL_L, spacing=0.25, align=PP_ALIGN.CENTER)
     _add_text(slide, s.story_summary,
-              Cm(3), SH * 0.40, SW - Cm(6), Cm(3.5),
+              Cm(2), SH * 0.40, text_width - Cm(4), Cm(3.5),
               size=13, color=WHITE, align=PP_ALIGN.CENTER, wrap=True,
               line_spacing=22, font="Songti SC")
     _add_text(slide, f"{s.city.upper()}  ·  {s.district.upper()}",
-              Cm(0), SH * 0.75, SW, Cm(0.6),
+              Cm(0), SH * 0.75, text_width, Cm(0.6),
               size=7, color=GRAY_M, spacing=0.15, align=PP_ALIGN.CENTER)
     _page_num(slide, n)
 
@@ -338,7 +375,9 @@ def _slide_story_mapping(prs, n: int, s: IndigoStoryUnit):
     for i, (beat, bg) in enumerate(zip(s.beats, colors_bg)):
         x = Cm(1) + col_w * i
         th_h = SH - Cm(5.5)
-        _add_rect(slide, x, Cm(3.2), col_w - Cm(0.2), th_h, fill=bg)
+        image_url = _beat_image(s, i, "image_url", "mood_image_url", "col2_image_url", "col3_image_url")
+        _img_placeholder(slide, x, Cm(3.2), col_w - Cm(0.2), th_h,
+                         bg=bg, image_url=image_url)
         _add_text(slide, beat.num, x + Cm(0.25), Cm(3.4), Cm(1.5), Cm(0.8),
                   size=11, bold=True, color=RGBColor(0xBB, 0xBB, 0xBB))
         _add_text(slide, beat.name_zh,
@@ -362,15 +401,18 @@ def _slide_story_flow_grid(prs, n: int, s: IndigoStoryUnit):
         row = i // 3
         x = Cm(0.9) + col * col_w
         y = Cm(3.0) + row * row_h
+        image_url = _beat_image(s, i, "image_url", "mood_image_url", "col2_image_url", "col3_image_url")
         _add_rect(slide, x, y, col_w - Cm(0.1), row_h - Cm(0.1),
                   fill=WHITE, line_color=GRAY_L, line_width=0.5)
-        _add_text(slide, beat.name_zh, x + Cm(0.4), y + Cm(0.4),
-                  col_w - Cm(0.9), Cm(1.0),
+        _img_placeholder(slide, x + Cm(0.35), y + Cm(0.4), Cm(3.2), Cm(2.2),
+                         bg=RGBColor(0xEC, 0xF0, 0xF0), image_url=image_url)
+        _add_text(slide, beat.name_zh, x + Cm(3.85), y + Cm(0.4),
+                  col_w - Cm(4.35), Cm(1.0),
                   size=11, bold=True, color=NAVY, font="Songti SC")
-        _add_text(slide, beat.space_zh, x + Cm(0.4), y + Cm(1.5),
-                  col_w - Cm(0.9), Cm(0.45),
+        _add_text(slide, beat.space_zh, x + Cm(3.85), y + Cm(1.5),
+                  col_w - Cm(4.35), Cm(0.45),
                   size=6, color=GRAY_M, spacing=0.12)
-        _add_text(slide, beat.narrative[:50] + "…", x + Cm(0.4), y + Cm(2.0),
+        _add_text(slide, beat.narrative[:50] + "…", x + Cm(0.4), y + Cm(2.9),
                   col_w - Cm(0.9), row_h - Cm(2.6),
                   size=7, color=GRAY_D, wrap=True, line_spacing=12)
         _add_text(slide, beat.tagline, x + Cm(0.4), y + row_h - Cm(0.75),
@@ -517,13 +559,15 @@ def build_indigo_pptx(story: IndigoStoryUnit) -> bytes:
     _slide_cinematic(prs, 3, story,
                      BG_DARK,
                      story.taglines[0].zh + "  ·  " + story.taglines[0].sub,
-                     story.concept_poem, "STORYLINE CONCEPT")
+                     story.concept_poem, "STORYLINE CONCEPT",
+                     _beat_image(story, 1, "mood_image_url", "image_url", "col2_image_url", "col3_image_url"))
     for i in range(3):
         _slide_origin(prs, 4 + i, story, i)
     _slide_cinematic(prs, 7, story,
                      RGBColor(0x0E, 0x16, 0x10),
                      story.emotion_headline,
-                     story.emotion_poem, "STORY EMOTION")
+                     story.emotion_poem, "STORY EMOTION",
+                     _beat_image(story, 3, "mood_image_url", "image_url", "col2_image_url", "col3_image_url"))
     _slide_story_summary(prs, 8, story)
     _slide_story_mapping(prs, 9, story)
     _slide_story_flow_grid(prs, 10, story)
