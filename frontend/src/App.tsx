@@ -1,7 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { toPng } from 'html-to-image'
 import type { StoryUnit } from './types'
-import { generate, edit, generateImages, locate, regenerateImage, exportPpt, type ImageTarget } from './api'
+import {
+  generate,
+  edit,
+  generateImages,
+  locate,
+  regenerateImage,
+  exportPpt,
+  getAuthToken,
+  getCurrentUser,
+  getHistoryItem,
+  listHistory,
+  logout,
+  onAuthExpired,
+  type AuthUser,
+  type GenerationHistoryItem,
+  type ImageTarget,
+} from './api'
+import type { IndigoStoryUnit } from './indigo_types'
 import { SlideDeck } from './Slides'
 import { MapPicker, reverseGeocode, type GeoResult } from './MapPicker'
 import { MapBackdrop } from './MapBackdrop'
@@ -14,6 +31,7 @@ import type { VisualIntent } from './types'
 import { ExportStage } from './stages/ExportStage'
 import { loadState, saveState, clearState } from './session'
 import { FastLane } from './FastLane'
+import { AuthScreen } from './AuthScreen'
 
 const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
   { num: 1, label: '选址', sublabel: 'Pick a neighborhood' },
@@ -39,7 +57,13 @@ const persisted = wasStuckMidGenerate
 type AppMode = 'home' | 'fast' | 'guided'
 
 export default function App() {
+  const [authChecked, setAuthChecked] = useState(false)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [history, setHistory] = useState<GenerationHistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const [appMode, setAppMode] = useState<AppMode>(persisted ? 'guided' : 'home')
+  const [fastInitialStory, setFastInitialStory] = useState<IndigoStoryUnit | null>(null)
   const [step, setStep] = useState(persisted?.step ?? 1)
   const [viewState, setViewState] = useState(() =>
     persisted?.candidate
@@ -60,9 +84,59 @@ export default function App() {
   const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
   const [error, setError] = useState('')
 
+  async function refreshHistory() {
+    if (!getAuthToken()) {
+      setHistory([])
+      return
+    }
+    setHistoryLoading(true)
+    setHistoryError('')
+    try {
+      setHistory(await listHistory())
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : '历史记录读取失败')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
   useEffect(() => {
+    async function bootstrapAuth() {
+      if (!getAuthToken()) {
+        setAuthChecked(true)
+        return
+      }
+      try {
+        const current = await getCurrentUser()
+        setUser(current)
+        await refreshHistory()
+      } catch {
+        setUser(null)
+      } finally {
+        setAuthChecked(true)
+      }
+    }
+    void bootstrapAuth()
+  }, [])
+
+  useEffect(() => {
+    return onAuthExpired(() => {
+      setUser(null)
+      setHistory([])
+      setFastInitialStory(null)
+      setAppMode('home')
+      setStory(null)
+      setCandidate(null)
+      setMessages([])
+      setError('')
+      clearState()
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
     saveState({ step, candidate, story, messages })
-  }, [step, candidate, story, messages])
+  }, [step, candidate, story, messages, user])
 
   useEffect(() => {
     if (wasStuckMidGenerate) {
@@ -392,18 +466,6 @@ export default function App() {
     setStory({ ...story, beats })
   }
 
-  function handleFastDone(result: StoryUnit) {
-    setStory(result)
-    setStep(4)
-    setMessages([{
-      role: 'agent',
-      content: `生成完成。${result.city}·${result.neighborhood} 的 6 个 beat 和图片都到了，调一下排版再导出。`,
-      timestamp: now(),
-      step: 4,
-    }])
-    setAppMode('guided')
-  }
-
   function handleJump(target: number) {
     if (target === 1) {
       setStep(1)
@@ -419,12 +481,53 @@ export default function App() {
 
   function handleGoHome() {
     setAppMode('home')
+    setFastInitialStory(null)
     setStep(1)
     setStory(null)
     setCandidate(null)
     setMessages([])
     setError('')
     clearState()
+    void refreshHistory()
+  }
+
+  async function handleLogout() {
+    try {
+      await logout()
+    } catch {
+      // Local logout should still happen even if the server session is already gone.
+    }
+    setUser(null)
+    setHistory([])
+    setFastInitialStory(null)
+    setAppMode('home')
+    setStory(null)
+    setCandidate(null)
+    setMessages([])
+    clearState()
+  }
+
+  async function openHistoryItem(item: GenerationHistoryItem) {
+    setHistoryError('')
+    try {
+      const detail = await getHistoryItem(item.id)
+      if (detail.mode === 'fast') {
+        setFastInitialStory(detail.story as IndigoStoryUnit)
+        setAppMode('fast')
+        return
+      }
+      setStory(detail.story as StoryUnit)
+      setStep(4)
+      setMessages([{
+        role: 'agent',
+        content: `已打开历史记录：${detail.title}`,
+        timestamp: now(),
+        step: 4,
+      }])
+      setAppMode('guided')
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : '历史记录打开失败')
+    }
   }
 
   const stepDefs: StepDef[] = STEP_DEFS.map(s => ({
@@ -464,17 +567,41 @@ export default function App() {
       ? '都改完了？点下面的导出 PPT 下载文件。'
       : undefined
 
+  if (!authChecked) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#0f0f0f]">
+        <div className="w-8 h-8 border-2 border-[#c8a96e]/30 border-t-[#c8a96e] rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <AuthScreen onAuthed={u => {
+      setUser(u)
+      void refreshHistory()
+    }} />
+  }
+
   if (appMode === 'home') {
     return (
       <div className="h-screen flex flex-col bg-[#0f0f0f]">
-        <header className="h-16 px-6 flex items-center border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm">
+        <header className="h-16 px-6 flex items-center justify-between border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm">
           <div className="flex items-baseline gap-3">
             <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">Hotel Indigo</span>
             <span className="text-[15px] font-light text-[#f5f5f0]/85">Neighborhood Storytelling</span>
           </div>
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-[#6b7280]">{user.email}</span>
+            <button
+              onClick={handleLogout}
+              className="font-mono text-[10px] tracking-[0.18em] uppercase text-[#6b7280] hover:text-[#a8a8a0] transition"
+            >
+              退出
+            </button>
+          </div>
         </header>
         <main className="flex-1 flex items-center justify-center px-6">
-          <div className="w-full max-w-[760px] flex flex-col gap-10">
+          <div className="w-full max-w-[860px] flex flex-col gap-10">
             <div className="text-center">
               <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#c8a96e] mb-3">选择模式</div>
               <h1 className="text-[28px] font-light text-[#f5f5f0]">从哪里开始？</h1>
@@ -520,6 +647,48 @@ export default function App() {
                 </div>
               </button>
             </div>
+            <section className="border-t border-[#1e1e1c] pt-6">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">History</div>
+                  <div className="text-sm text-[#f5f5f0]/80 mt-1">历史生成记录</div>
+                </div>
+                <button
+                  onClick={() => void refreshHistory()}
+                  className="font-mono text-[10px] tracking-[0.18em] uppercase text-[#6b7280] hover:text-[#a8a8a0] transition"
+                >
+                  刷新
+                </button>
+              </div>
+              {historyError && (
+                <div className="mb-3 text-sm text-red-400 bg-red-900/20 border border-red-900/30 rounded px-4 py-3">
+                  {historyError}
+                </div>
+              )}
+              {historyLoading ? (
+                <div className="text-sm text-[#6b7280]">正在读取历史…</div>
+              ) : history.length === 0 ? (
+                <div className="text-sm text-[#6b7280]">还没有历史记录。生成完成后会自动保存在这里。</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {history.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => void openHistoryItem(item)}
+                      className="text-left bg-[#1a1a18] hover:bg-[#1e1e1c] border border-[#2a2a28] hover:border-[#c8a96e]/35 rounded p-4 transition"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-[#f5f5f0]">{item.title}</span>
+                        <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-[#c8a96e]/70">{item.mode}</span>
+                      </div>
+                      <div className="text-xs text-[#6b7280] mt-2">
+                        {new Date(item.updated_at * 1000).toLocaleString()}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         </main>
       </div>
@@ -527,7 +696,17 @@ export default function App() {
   }
 
   if (appMode === 'fast') {
-    return <FastLane onDone={handleFastDone} onBack={() => setAppMode('home')} />
+    return (
+      <FastLane
+        initialStory={fastInitialStory}
+        onHistoryChanged={() => void refreshHistory()}
+        onBack={() => {
+          setFastInitialStory(null)
+          setAppMode('home')
+          void refreshHistory()
+        }}
+      />
+    )
   }
 
   return (

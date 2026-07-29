@@ -1,16 +1,33 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { IndigoStoryUnit } from './indigo_types'
 import { generateIndigo, exportIndigoPpt } from './api'
 import { IndigoPreview } from './IndigoSlides'
 
 type Phase = 'idle' | 'generating' | 'preview' | 'exporting'
 
-export function FastLane({ onBack }: { onBack: () => void }) {
+export function FastLane({
+  onBack,
+  initialStory = null,
+  onHistoryChanged,
+}: {
+  onBack: () => void
+  initialStory?: IndigoStoryUnit | null
+  onHistoryChanged?: () => void
+}) {
   const [city, setCity] = useState('')
   const [district, setDistrict] = useState('')
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [story, setStory] = useState<IndigoStoryUnit | null>(null)
+  const [phase, setPhase] = useState<Phase>(initialStory ? 'preview' : 'idle')
+  const [story, setStory] = useState<IndigoStoryUnit | null>(initialStory)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!initialStory) return
+    setStory(initialStory)
+    setCity(initialStory.city)
+    setDistrict(initialStory.district)
+    setPhase('preview')
+    setError('')
+  }, [initialStory])
 
   async function handleGenerate() {
     const c = city.trim(), d = district.trim()
@@ -21,6 +38,7 @@ export function FastLane({ onBack }: { onBack: () => void }) {
       const result = await generateIndigo(c, d)
       setStory(result)
       setPhase('preview')
+      onHistoryChanged?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : '生成失败，请重试')
       setPhase('idle')

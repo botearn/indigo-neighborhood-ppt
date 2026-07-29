@@ -1,7 +1,9 @@
 node_modules/
+node_modules.bak-*/
 __pycache__/
 *.pyc
 .env
 .env.local
 dist/
 .DS_Store
+data/
