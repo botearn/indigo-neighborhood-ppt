@@ -183,7 +183,15 @@ class IndigoGenerateRequest(BaseModel):
     hotel_en: Optional[str] = None
 
 
-class IndigoEditBeatRequest(BaseModel):
+class IndigoEditRequest(BaseModel):
+    story_unit: IndigoStoryUnit
+    instruction: str
+    conversation_history: Optional[list[ConversationMessage]] = None
+
+
+class IndigoSingleImageRequest(BaseModel):
     story_unit: IndigoStoryUnit
     beat_index: int          # 0-5
-    instruction: str
+    image_field: str         # image_url | mood_image_url | col2_image_url | col3_image_url
+    instruction: Optional[str] = None
+    conversation_history: Optional[list[ConversationMessage]] = None

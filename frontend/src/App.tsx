@@ -1,13 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
-import { toPng } from 'html-to-image'
-import type { StoryUnit } from './types'
+import { useEffect, useState } from 'react'
 import {
-  generate,
-  edit,
-  generateImages,
   locate,
-  regenerateImage,
-  exportPpt,
+  generateIndigoText,
+  editIndigo,
+  generateIndigoImages,
+  regenerateIndigoImage,
+  exportIndigoPpt,
   getAuthToken,
   getCurrentUser,
   getHistoryItem,
@@ -16,19 +14,17 @@ import {
   onAuthExpired,
   type AuthUser,
   type GenerationHistoryItem,
-  type ImageTarget,
+  type IndigoImageTarget,
 } from './api'
 import type { IndigoStoryUnit } from './indigo_types'
-import { SlideDeck } from './Slides'
 import { MapPicker, reverseGeocode, type GeoResult } from './MapPicker'
 import { MapBackdrop } from './MapBackdrop'
 import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
-import { TextStage } from './stages/TextStage'
-import { ImageStage } from './stages/ImageStage'
-import { StructureStage } from './stages/StructureStage'
-import type { VisualIntent } from './types'
-import { ExportStage } from './stages/ExportStage'
+import { IndigoTextStage } from './stages/IndigoTextStage'
+import { IndigoImageStage, indigoImageTargetLabel } from './stages/IndigoImageStage'
+import { IndigoStructureStage } from './stages/IndigoStructureStage'
+import { IndigoExportStage } from './stages/IndigoExportStage'
 import { loadState, saveState, clearState } from './session'
 import { FastLane } from './FastLane'
 import { AuthScreen } from './AuthScreen'
@@ -56,6 +52,19 @@ const persisted = wasStuckMidGenerate
 
 type AppMode = 'home' | 'fast' | 'guided'
 
+function isIndigoStory(value: unknown): value is IndigoStoryUnit {
+  if (!value || typeof value !== 'object') return false
+  const story = value as Partial<IndigoStoryUnit>
+  return (
+    typeof story.city === 'string' &&
+    typeof story.district === 'string' &&
+    Array.isArray(story.taglines) &&
+    Array.isArray(story.origins) &&
+    Array.isArray(story.beats) &&
+    Array.isArray(story.concept_poem)
+  )
+}
+
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -71,16 +80,15 @@ export default function App() {
       : INITIAL_VIEW,
   )
   const [candidate, setCandidate] = useState<GeoResult | null>(persisted?.candidate ?? null)
-  const [story, setStory] = useState<StoryUnit | null>(persisted?.story ?? null)
+  const [story, setStory] = useState<IndigoStoryUnit | null>(persisted?.story ?? null)
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [searching, setSearching] = useState(false)
   const [imagingPics, setImagingPics] = useState(false)
-  const [selectedImage, setSelectedImage] = useState<ImageTarget | null>(null)
-  const [regeneratingImage, setRegeneratingImage] = useState<ImageTarget | null>(null)
+  const [selectedImage, setSelectedImage] = useState<IndigoImageTarget | null>(null)
+  const [regeneratingImage, setRegeneratingImage] = useState<IndigoImageTarget | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportedAt, setExportedAt] = useState<number | null>(null)
-  const deckRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
   const [error, setError] = useState('')
 
@@ -158,20 +166,28 @@ export default function App() {
     setMessages(prev => [...prev, m])
   }
 
-  async function triggerImageGen(s: StoryUnit) {
+  function hasIndigoImages(s: IndigoStoryUnit) {
+    return s.beats.every(b => !!b.image_url && !!b.mood_image_url && !!b.col2_image_url && !!b.col3_image_url)
+  }
+
+  function renumberIndigoBeats(beats: IndigoStoryUnit['beats']) {
+    return beats.map((beat, i) => ({ ...beat, num: String(i + 1).padStart(2, '0') }))
+  }
+
+  async function triggerImageGen(s: IndigoStoryUnit) {
     setImagingPics(true)
     pushMessage({
       role: 'agent',
-      content: '正在为你拍 7 张图：1 张氛围图 + 6 个 beat。约 30–60 秒。',
+      content: '正在为这套 22 页 Indigo deck 生成图片：6 个 beat，每个 4 张。约 30 到 60 秒。',
       timestamp: now(),
       step: 3,
     })
     try {
-      const updated = await generateImages(s)
+      const updated = await generateIndigoImages(s)
       setStory(updated)
       pushMessage({
         role: 'agent',
-        content: '图都到了。看看哪张要换？（单张重生成 Phase 2 上线）',
+        content: '图都到了。每个 touchpoint 的主图、mood、设计灵感、空间细节都可以单独换。',
         timestamp: now(),
         step: 3,
       })
@@ -189,8 +205,7 @@ export default function App() {
 
   useEffect(() => {
     if (step !== 3 || !story || imagingPics) return
-    const hasAll = !!story.mood_image_url && story.beats.every(b => !!b.image_url)
-    if (hasAll) return
+    if (hasIndigoImages(story)) return
     void triggerImageGen(story)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
@@ -206,16 +221,16 @@ export default function App() {
     setGenerating(true)
     pushMessage({
       role: 'agent',
-      content: `好。让我去走一趟 ${r.city} · ${r.neighborhood}，约 30 秒。`,
+      content: `好。先为 ${r.city} · ${r.neighborhood} 生成 Indigo 22 页故事文字。`,
       timestamp: now(),
       step: 2,
     })
     try {
-      const result = await generate(r.city, r.neighborhood)
+      const result = await generateIndigoText(r.city, r.neighborhood)
       setStory(result)
       pushMessage({
         role: 'agent',
-        content: `回来了。我把这片街区的灵魂落在「${result.signature.zh}」上，给了 ${result.beats.length} 个 beat。看看哪里要调整？`,
+        content: `文字稿好了。我给了 ${result.taglines.length} 个标题方向、3 个源起角度和 ${result.beats.length} 个酒店触点。先看文字。`,
         timestamp: now(),
         step: 2,
       })
@@ -309,7 +324,7 @@ export default function App() {
       if (!story) return
       setEditing(true)
       try {
-        const updated = await edit(story, instruction, messages)
+        const updated = await editIndigo(story, instruction, messages)
         setStory(updated)
         pushMessage({
           role: 'agent',
@@ -334,7 +349,7 @@ export default function App() {
       if (!story) return
       setEditing(true)
       try {
-        const updated = await edit(story, instruction, messages)
+        const updated = await editIndigo(story, instruction, messages)
         setStory(updated)
         pushMessage({
           role: 'agent',
@@ -367,18 +382,14 @@ export default function App() {
         return
       }
       const target = selectedImage
-      const targetLabel =
-        target.type === 'mood' ? 'Mood · Hero' : story.beats[target.beatIndex].title
+      const targetLabel = indigoImageTargetLabel(story, target)
       setRegeneratingImage(target)
       try {
-        const newUrl = await regenerateImage(story, target, instruction, messages)
+        const newUrl = await regenerateIndigoImage(story, target, instruction, messages)
         setStory(prev => {
           if (!prev) return prev
-          if (target.type === 'mood') {
-            return { ...prev, mood_image_url: newUrl }
-          }
           const beats = prev.beats.map((b, i) =>
-            i === target.beatIndex ? { ...b, image_url: newUrl } : b,
+            i === target.beatIndex ? { ...b, [target.field]: newUrl } : b,
           )
           return { ...prev, beats }
         })
@@ -411,30 +422,21 @@ export default function App() {
   }
 
   async function handleExport() {
-    if (!story || !deckRef.current) return
+    if (!story) return
     setExporting(true)
     setError('')
     pushMessage({
       role: 'agent',
-      content: '正在把每一页渲染成图，再打包成 PPT。约 10 秒。',
+      content: '正在用 Indigo 22 页模板生成可编辑 PPTX。',
       timestamp: now(),
       step: 5,
     })
     try {
-      await new Promise(r => setTimeout(r, 100))
-      const slideEls = Array.from(
-        deckRef.current.querySelectorAll('[data-slide] > *'),
-      ) as HTMLElement[]
-      const dataUrls: string[] = []
-      for (const el of slideEls) {
-        const url = await toPng(el, { cacheBust: true, pixelRatio: 1 })
-        dataUrls.push(url)
-      }
-      await exportPpt(story, dataUrls)
+      await exportIndigoPpt(story)
       setExportedAt(Date.now())
       pushMessage({
         role: 'agent',
-        content: '导出完成。下载好就可以用了。',
+        content: '导出完成。这一版和一键生成共用同一个可编辑 PPTX builder。',
         timestamp: now(),
         step: 5,
       })
@@ -457,13 +459,7 @@ export default function App() {
     const beats = [...story.beats]
     const [moved] = beats.splice(fromIndex, 1)
     beats.splice(toIndex, 0, moved)
-    setStory({ ...story, beats })
-  }
-
-  function setBeatIntent(beatIndex: number, intent: VisualIntent) {
-    if (!story) return
-    const beats = story.beats.map((b, i) => (i === beatIndex ? { ...b, visual_intent: intent } : b))
-    setStory({ ...story, beats })
+    setStory({ ...story, beats: renumberIndigoBeats(beats) })
   }
 
   function handleJump(target: number) {
@@ -511,12 +507,16 @@ export default function App() {
     setHistoryError('')
     try {
       const detail = await getHistoryItem(item.id)
+      if (!isIndigoStory(detail.story)) {
+        setHistoryError('这条历史记录还是旧格式，不能用新的 Indigo 22 页生成器打开。')
+        return
+      }
       if (detail.mode === 'fast') {
-        setFastInitialStory(detail.story as IndigoStoryUnit)
+        setFastInitialStory(detail.story)
         setAppMode('fast')
         return
       }
-      setStory(detail.story as StoryUnit)
+      setStory(detail.story)
       setStep(4)
       setMessages([{
         role: 'agent',
@@ -547,9 +547,9 @@ export default function App() {
       : step === 2
       ? '告诉我要怎么改文字…'
       : step === 3
-      ? '比如「换成黄昏」、「再 cinematic 一些」'
+      ? '比如「这张换成黄昏」、「Mood 再 cinematic 一些」'
       : step === 4
-      ? '比如「把 BUY 放第一个」、「第 3 个 beat 改短」'
+      ? '比如「把第 3 个 touchpoint 放前面」、「入口先讲」'
       : step === 5
       ? '点导出 PPT 下载，或者回上一步再改。'
       : 'Ask the concierge…'
@@ -562,7 +562,7 @@ export default function App() {
         ? '告诉我这张图要怎么改。比如「换成黄昏」、「再 cinematic 一些」、「人多一点」。'
         : '点一张图选中，再让我改它。'
       : step === 4
-      ? '↑↓ 调顺序、点风格 chip 选 6 种 slide 排版。或者告诉我「把 BUY 放第一个」之类。'
+      ? '↑↓ 调整 touchpoint 顺序。逐步导出会使用和一键生成同一套 22 页 PPTX builder。'
       : step === 5
       ? '都改完了？点下面的导出 PPT 下载文件。'
       : undefined
@@ -731,10 +731,10 @@ export default function App() {
 
         {step === 2 && (
           <div className="absolute inset-0 pr-[412px]">
-            <TextStage
+            <IndigoTextStage
               story={story}
               loading={generating}
-              pendingLocation={candidate ? { city: candidate.city, neighborhood: candidate.neighborhood } : null}
+              pendingLocation={candidate ? { city: candidate.city, district: candidate.neighborhood } : null}
               onNext={() => setStep(3)}
             />
           </div>
@@ -742,7 +742,7 @@ export default function App() {
 
         {step === 3 && story && (
           <div className="absolute inset-0 pr-[412px]">
-            <ImageStage
+            <IndigoImageStage
               story={story}
               loading={imagingPics}
               selected={selectedImage}
@@ -756,10 +756,9 @@ export default function App() {
 
         {step === 4 && story && (
           <div className="absolute inset-0 pr-[412px]">
-            <StructureStage
+            <IndigoStructureStage
               story={story}
               onReorder={reorderBeat}
-              onSetIntent={setBeatIntent}
               onNext={() => setStep(5)}
               onBack={() => setStep(3)}
             />
@@ -768,7 +767,7 @@ export default function App() {
 
         {step === 5 && story && (
           <div className="absolute inset-0 pr-[412px]">
-            <ExportStage
+            <IndigoExportStage
               story={story}
               exporting={exporting}
               exportedAt={exportedAt}
@@ -795,8 +794,6 @@ export default function App() {
           {error}
         </div>
       )}
-
-      {step === 5 && story && <SlideDeck story={story} deckRef={deckRef} />}
     </div>
   )
 }

@@ -6,7 +6,7 @@ import json
 from openai import OpenAI
 from pydantic import ValidationError
 from app.core.config import settings
-from app.core.models import IndigoStoryUnit, IndigoGenerateRequest
+from app.core.models import ConversationMessage, IndigoStoryUnit, IndigoGenerateRequest, IndigoEditRequest
 
 BEAT_SPACES = [
     ("01", "大堂", "ARRIVAL\nTHE GATE"),
@@ -91,6 +91,25 @@ Beat 顺序和空间（name_zh 自由生成，space_zh/ghost_en 由系统覆盖�
 
 只返回 JSON，不要任何解释或 markdown 代码块。"""
 
+EDIT_PROMPT = SYSTEM_PROMPT + """
+
+────────────────────────────────────────────
+编辑模式
+────────────────────────────────────────────
+你会收到一份已经生成的 IndigoStoryUnit JSON 和用户修改意见。
+请返回修改后的完整 IndigoStoryUnit JSON。
+
+规则：
+• 保持同一个 schema，不要丢字段。
+• 若用户没有明确要求换图，保留所有 image_url / mood_image_url / col2_image_url / col3_image_url。
+• 保持 3 个 taglines、3 个 origins、6 个 beats。
+• beats 仍然围绕酒店空间触点叙事，不要变成普通旅游路线。
+• 用户若要求结构顺序调整，可以调整 beats 顺序，但每个 beat 的空间描述、叙事和图片应跟随该 beat。
+• 只返回 JSON，不要解释。
+"""
+
+IMAGE_FIELDS = ("image_url", "mood_image_url", "col2_image_url", "col3_image_url")
+
 
 def _client() -> OpenAI:
     if settings.llm_provider == "deepseek":
@@ -111,6 +130,52 @@ def _apply_fixed_fields(data: dict) -> dict:
             beats[i]["space_zh"] = space_zh
             beats[i]["ghost_en"] = ghost_en
     return data
+
+
+def _history_context(history: list[ConversationMessage] | None) -> str:
+    if not history:
+        return ""
+    lines = []
+    for msg in history[-12:]:
+        role = "用户" if msg.role == "user" else "助手"
+        lines.append(f"{role}: {msg.content}")
+    return "\n".join(lines)
+
+
+def _preserve_images(original: IndigoStoryUnit, updated: IndigoStoryUnit) -> IndigoStoryUnit:
+    originals_by_num = {beat.num: beat for beat in original.beats}
+    for i, beat in enumerate(updated.beats):
+        fallback = originals_by_num.get(beat.num)
+        if fallback is None and i < len(original.beats):
+            fallback = original.beats[i]
+        if fallback is None:
+            continue
+        for field in IMAGE_FIELDS:
+            if not getattr(beat, field, None):
+                setattr(beat, field, getattr(fallback, field, None))
+    return updated
+
+
+def _renumber_beats(story: IndigoStoryUnit) -> IndigoStoryUnit:
+    for i, beat in enumerate(story.beats):
+        beat.num = f"{i + 1:02d}"
+    return story
+
+
+def _load_indigo_json(
+    raw: str,
+    req_city: str,
+    req_district: str,
+    hotel_en: str,
+    apply_fixed_fields: bool = True,
+) -> IndigoStoryUnit:
+    data = json.loads(raw)
+    data["city"] = req_city
+    data["district"] = req_district
+    data["hotel_en"] = hotel_en
+    if apply_fixed_fields:
+        data = _apply_fixed_fields(data)
+    return IndigoStoryUnit(**data)
 
 
 async def generate_indigo(req: IndigoGenerateRequest) -> IndigoStoryUnit:
@@ -138,12 +203,7 @@ async def generate_indigo(req: IndigoGenerateRequest) -> IndigoStoryUnit:
         )
         raw = resp.choices[0].message.content or ""
         try:
-            data = json.loads(raw)
-            data["city"] = req.city
-            data["district"] = req.district
-            data["hotel_en"] = hotel_en
-            data = _apply_fixed_fields(data)
-            return IndigoStoryUnit(**data)
+            return _load_indigo_json(raw, req.city, req.district, hotel_en)
         except (ValidationError, json.JSONDecodeError, ValueError) as e:
             last_err = e
             convo.append({"role": "assistant", "content": raw})
@@ -154,6 +214,58 @@ async def generate_indigo(req: IndigoGenerateRequest) -> IndigoStoryUnit:
                     "请修正并严格按 schema 重新返回完整 JSON。"
                     "taglines 必须 3 个，origins 必须 3 个，beats 必须 6 个，"
                     "每个 beat 的所有字段（包括 mb_* 字段）都必须填写。只返回 JSON。"
+                ),
+            })
+            if attempt == 0:
+                continue
+
+    assert last_err is not None
+    raise last_err
+
+
+async def edit_indigo(req: IndigoEditRequest) -> IndigoStoryUnit:
+    story = req.story_unit
+    client = _client()
+    current = story.model_dump(mode="json")
+    history = _history_context(req.conversation_history)
+    user_msg = (
+        f"当前 IndigoStoryUnit JSON:\n{json.dumps(current, ensure_ascii=False)}\n\n"
+        f"用户修改意见:\n{req.instruction.strip()}\n"
+    )
+    if history:
+        user_msg += f"\n最近对话上下文:\n{history}\n"
+
+    convo = [
+        {"role": "system", "content": EDIT_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
+
+    last_err: Exception | None = None
+    for attempt in range(2):
+        resp = client.chat.completions.create(
+            model=_model(),
+            response_format={"type": "json_object"},
+            messages=convo,
+            temperature=0.55,
+        )
+        raw = resp.choices[0].message.content or ""
+        try:
+            updated = _load_indigo_json(
+                raw,
+                story.city,
+                story.district,
+                story.hotel_en,
+                apply_fixed_fields=False,
+            )
+            return _renumber_beats(_preserve_images(story, updated))
+        except (ValidationError, json.JSONDecodeError, ValueError) as e:
+            last_err = e
+            convo.append({"role": "assistant", "content": raw})
+            convo.append({
+                "role": "user",
+                "content": (
+                    f"修改后的 JSON 不符合 schema，错误：{e}\n"
+                    "请修正并返回完整 JSON。保留原图 URL，taglines=3，origins=3，beats=6。"
                 ),
             })
             if attempt == 0:
