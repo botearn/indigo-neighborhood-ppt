@@ -6,7 +6,6 @@ from app.api.auth import router as auth_router
 from app.api.routes import router
 from app.api.github_webhook import router as github_router
 from app.api.render_webhook import router as render_router
-from app.api.feishu_event import router as feishu_router
 
 app = FastAPI(title="Indigo Neighborhood PPT API")
 init_auth_store()
@@ -24,7 +23,6 @@ app.include_router(auth_router)
 app.include_router(router)
 app.include_router(github_router)
 app.include_router(render_router)
-app.include_router(feishu_router)
 
 
 @app.get("/health")
