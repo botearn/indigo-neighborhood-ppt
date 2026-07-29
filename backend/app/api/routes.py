@@ -1,7 +1,7 @@
 from urllib.parse import quote
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from app.core import auth
 from app.core.auth import AuthUser, require_user
 from app.core.models import (
@@ -113,23 +113,10 @@ async def images_single(req: SingleImageRequest, user: AuthUser = Depends(requir
 
 
 @router.post("/export")
-async def export(request: Request, user: AuthUser = Depends(require_user)):
+async def export(req: ExportRequest, user: AuthUser = Depends(require_user)):
     try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="invalid JSON body")
-
-    try:
-        if isinstance(body, dict) and isinstance(body.get("slides"), list):
-            req = ExportRequest(**body)
-            data = ppt_builder.build_ppt_from_slides(req.slides)
-            filename = f"{req.neighborhood}_{req.city}.pptx"
-        else:
-            story = StoryUnit(**body)
-            data = ppt_builder.build_ppt_from_story(story)
-            filename = f"{story.neighborhood}_{story.city}.pptx"
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors())
+        data = ppt_builder.build_ppt_from_slides(req.slides)
+        filename = f"{req.neighborhood}_{req.city}.pptx"
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
