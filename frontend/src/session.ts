@@ -1,13 +1,13 @@
-import type { StoryUnit } from './types'
 import type { GeoResult } from './MapPicker'
 import type { ConciergeMessage } from './Concierge'
+import type { IndigoStoryUnit } from './indigo_types'
 
-const STORAGE_KEY = 'indigo.session.v1'
+const STORAGE_KEY = 'indigo.session.v2'
 
 export type PersistedState = {
   step: number
   candidate: GeoResult | null
-  story: StoryUnit | null
+  story: IndigoStoryUnit | null
   messages: ConciergeMessage[]
 }
 
@@ -16,7 +16,7 @@ type SerializedMessage = Omit<ConciergeMessage, 'action'>
 type SerializedState = {
   step: number
   candidate: GeoResult | null
-  story: StoryUnit | null
+  story: IndigoStoryUnit | null
   messages: SerializedMessage[]
 }
 

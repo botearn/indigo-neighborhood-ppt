@@ -5,7 +5,7 @@ import random
 import httpx
 import fal_client
 from app.core.config import settings
-from app.core.models import StoryUnit, SingleImageRequest, IndigoStoryUnit
+from app.core.models import StoryUnit, SingleImageRequest, IndigoStoryUnit, IndigoSingleImageRequest
 
 
 VERB_KEYWORDS = {
@@ -247,3 +247,33 @@ async def generate_indigo_images(story: IndigoStoryUnit) -> IndigoStoryUnit:
             beat.col2_image_url = results[2]
             beat.col3_image_url = results[3]
     return story
+
+
+async def generate_indigo_single_image(req: IndigoSingleImageRequest) -> str:
+    story = req.story_unit
+    if not (0 <= req.beat_index < len(story.beats)):
+        raise ValueError(f"invalid beat_index: {req.beat_index}")
+    beat = story.beats[req.beat_index]
+    field = req.image_field
+    if field == "image_url":
+        prompt = _indigo_beat_prompt(beat, story.city, story.district)
+        unsplash_query = f"{beat.name_zh} {story.city} {story.district} editorial"
+    elif field == "mood_image_url":
+        prompt = _indigo_mood_prompt(beat, story.city, story.district)
+        unsplash_query = f"{beat.mb_concept} {story.city} {story.district} texture"
+    elif field == "col2_image_url":
+        prompt = _indigo_col2_prompt(beat, story.city, story.district)
+        unsplash_query = f"{beat.mb_col2_title} {story.city} interior design"
+    elif field == "col3_image_url":
+        prompt = _indigo_col3_prompt(beat, story.city, story.district)
+        unsplash_query = f"{beat.mb_col3_title} {story.city} craft artisan"
+    else:
+        raise ValueError(f"unknown image_field: {field}")
+
+    if req.instruction:
+        prompt = f"{prompt}, {req.instruction.strip()}"
+        unsplash_query = f"{unsplash_query} {req.instruction.strip()}"
+
+    if settings.image_provider == "unsplash":
+        return await _search_unsplash(unsplash_query) or ""
+    return await _gen(prompt)

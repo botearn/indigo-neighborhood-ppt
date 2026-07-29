@@ -13,6 +13,8 @@ from app.core.models import (
     LocateRequest,
     LocateResponse,
     IndigoGenerateRequest,
+    IndigoEditRequest,
+    IndigoSingleImageRequest,
     IndigoStoryUnit,
 )
 from app.services import generator, ppt_builder, image_generator, locator, indigo_generator, indigo_pptx_builder
@@ -42,6 +44,51 @@ async def indigo_generate(req: IndigoGenerateRequest, user: AuthUser = Depends(r
         return story
     except Exception as e:
         import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/generate-text", response_model=IndigoStoryUnit)
+async def indigo_generate_text(req: IndigoGenerateRequest, user: AuthUser = Depends(require_user)):
+    try:
+        story = await indigo_generator.generate_indigo(req)
+        auth.create_history(
+            user_id=user.id,
+            mode="guided",
+            city=story.city,
+            district=story.district,
+            title=f"{story.city} {story.district}",
+            story=story,
+        )
+        return story
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/edit", response_model=IndigoStoryUnit)
+async def indigo_edit(req: IndigoEditRequest, user: AuthUser = Depends(require_user)):
+    try:
+        return await indigo_generator.edit_indigo(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/images", response_model=IndigoStoryUnit)
+async def indigo_images(story: IndigoStoryUnit, user: AuthUser = Depends(require_user)):
+    try:
+        return await image_generator.generate_indigo_images(story)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/images/single", response_model=SingleImageResponse)
+async def indigo_images_single(req: IndigoSingleImageRequest, user: AuthUser = Depends(require_user)):
+    try:
+        url = await image_generator.generate_indigo_single_image(req)
+        return SingleImageResponse(image_url=url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

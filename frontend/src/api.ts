@@ -41,6 +41,9 @@ export type AuthResponse = {
   token: string
 }
 
+export type IndigoImageField = 'image_url' | 'mood_image_url' | 'col2_image_url' | 'col3_image_url'
+export type IndigoImageTarget = { beatIndex: number; field: IndigoImageField }
+
 export type GenerationHistoryItem = {
   id: string
   mode: 'fast' | 'guided' | string
@@ -291,6 +294,70 @@ export async function generateIndigo(
   })
   await ensureOk(res)
   return res.json()
+}
+
+export async function generateIndigoText(
+  city: string,
+  district: string,
+  hotelEn?: string,
+): Promise<IndigoStoryUnit> {
+  const res = await apiFetch('/indigo/generate-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ city, district, hotel_en: hotelEn }),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function editIndigo(
+  storyUnit: IndigoStoryUnit,
+  instruction: string,
+  history?: ConciergeMessage[],
+): Promise<IndigoStoryUnit> {
+  const res = await apiFetch('/indigo/edit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      story_unit: storyUnit,
+      instruction,
+      conversation_history: toHistory(history),
+    }),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function generateIndigoImages(storyUnit: IndigoStoryUnit): Promise<IndigoStoryUnit> {
+  const res = await apiFetch('/indigo/images', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(storyUnit),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function regenerateIndigoImage(
+  storyUnit: IndigoStoryUnit,
+  target: IndigoImageTarget,
+  instruction?: string,
+  history?: ConciergeMessage[],
+): Promise<string> {
+  const res = await apiFetch('/indigo/images/single', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      story_unit: storyUnit,
+      beat_index: target.beatIndex,
+      image_field: target.field,
+      instruction,
+      conversation_history: toHistory(history),
+    }),
+  })
+  await ensureOk(res)
+  const data = (await res.json()) as { image_url: string }
+  return data.image_url
 }
 
 export async function exportIndigoPpt(story: IndigoStoryUnit): Promise<void> {
