@@ -34,6 +34,13 @@ const ORIGIN_BG = [
   'linear-gradient(170deg,#3a3020 0%,#504030 35%,#383020 65%,#282010 100%)',
   'linear-gradient(170deg,#283a28 0%,#384a38 35%,#283828 65%,#1a2c1a 100%)',
 ]
+type BeatImageField = 'image_url' | 'mood_image_url' | 'col2_image_url' | 'col3_image_url'
+const DEFAULT_IMAGE_FIELDS: BeatImageField[] = ['image_url', 'mood_image_url', 'col2_image_url', 'col3_image_url']
+function beatImage(s: IndigoStoryUnit, idx: number, fields: BeatImageField[] = DEFAULT_IMAGE_FIELDS) {
+  if (!s.beats.length) return undefined
+  const beat = s.beats[idx % s.beats.length]
+  return fields.map((field) => beat[field]).find(Boolean)
+}
 const MB_COL1_BG: Record<string, string> = {
   '01': 'linear-gradient(135deg,#2a1e0e 0%,#1a1208 100%)',
   '02': 'linear-gradient(135deg,#1a2828 0%,#2a3838 100%)',
@@ -97,9 +104,16 @@ function PageNum({ n, dark }: { n: number; dark?: boolean }) {
 // ── Slide types ───────────────────────────────────────────────────────────
 
 function Slide01Cover({ s }: { s: IndigoStoryUnit }) {
+  const coverImage = beatImage(s, 0, ['image_url', 'mood_image_url', 'col2_image_url', 'col3_image_url'])
   return (
     <div style={{ width: W, height: H, background: '#0c1820', position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
       <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 30% 50%,rgba(45,122,122,.18) 0%,transparent 55%),linear-gradient(160deg,#0c1820 0%,#162430 50%,#0a1218 100%)' }} />
+      {coverImage && (
+        <>
+          <img src={coverImage} alt="" style={{ position: 'absolute', top: 36, right: 0, bottom: 0, width: '48%', height: 'calc(100% - 36px)', objectFit: 'cover' }} />
+          <div style={{ position: 'absolute', top: 36, bottom: 0, left: '50%', width: 8, background: '#0c1820' }} />
+        </>
+      )}
       <HBar city={s.city} district={s.district} />
       <div style={{ position: 'absolute', bottom: 100, left: 44 }}>
         <div style={{ fontSize: 6, fontWeight: 700, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 8 }}>HOTEL</div>
@@ -125,31 +139,45 @@ function Slide02Taglines({ s }: { s: IndigoStoryUnit }) {
       <HBar city={s.city} district={s.district} />
       <SecLabel en="TAGLINE OPTION" zh="故事标题方案" />
       <div style={{ position: 'absolute', top: 70, left: 22, right: 22, bottom: 28, display: 'flex', gap: 12, alignItems: 'stretch' }}>
-        {s.taglines.map((tl, i) => (
-          <div key={i} style={{ flex: 1, border: `1px solid ${i === 0 ? T.teal : T.grayL}`, borderRadius: 2, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: 6, background: i === 0 ? 'rgba(45,122,122,.04)' : '#fff' }}>
-            <div style={{ fontSize: 7, color: T.grayM, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'monospace' }}>Option {i + 1}{i === 0 ? ' ★' : ''}</div>
-            <div style={{ fontSize: 22, fontWeight: 400, letterSpacing: '0.5em', color: T.navy, fontFamily: "'STSong','SimSun','Noto Serif CJK SC',serif", lineHeight: 1.3 }}>{tl.zh}</div>
-            <div style={{ fontSize: 9, color: T.grayM, lineHeight: 1.6 }}>{tl.sub}</div>
-          </div>
-        ))}
+        {s.taglines.map((tl, i) => {
+          const image = beatImage(s, i, ['mood_image_url', 'image_url', 'col2_image_url', 'col3_image_url'])
+          return (
+            <div key={i} style={{ flex: 1, border: `1px solid ${i === 0 ? T.teal : T.grayL}`, borderRadius: 2, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: 6, background: i === 0 ? 'rgba(45,122,122,.04)' : '#fff' }}>
+              <div style={{ fontSize: 7, color: T.grayM, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'monospace' }}>Option {i + 1}{i === 0 ? ' ★' : ''}</div>
+              <div style={{ fontSize: 22, fontWeight: 400, letterSpacing: '0.5em', color: T.navy, fontFamily: "'STSong','SimSun','Noto Serif CJK SC',serif", lineHeight: 1.3 }}>{tl.zh}</div>
+              <div style={{ fontSize: 9, color: T.grayM, lineHeight: 1.6 }}>{tl.sub}</div>
+              {image ? (
+                <img src={image} alt="" style={{ marginTop: 'auto', height: 150, width: '100%', borderRadius: 1, objectFit: 'cover' }} />
+              ) : (
+                <div style={{ marginTop: 'auto', height: 150, borderRadius: 1, background: '#ecf0f0' }} />
+              )}
+            </div>
+          )
+        })}
       </div>
       <PageNum n={2} dark />
     </div>
   )
 }
 
-function SlideCinematic({ n, bg, headline, paras, topLabel }: {
-  n: number; bg: string; headline: string; paras: string[]; topLabel?: string
+function SlideCinematic({ n, bg, headline, paras, topLabel, imageUrl }: {
+  n: number; bg: string; headline: string; paras: string[]; topLabel?: string; imageUrl?: string
 }) {
   return (
     <div style={{ width: W, height: H, background: bg, position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
+      {imageUrl && (
+        <>
+          <img src={imageUrl} alt="" style={{ position: 'absolute', top: 36, right: 0, bottom: 0, width: '28%', height: 'calc(100% - 36px)', objectFit: 'cover' }} />
+          <div style={{ position: 'absolute', top: 36, bottom: 0, right: '28%', width: 8, background: bg }} />
+        </>
+      )}
       {topLabel && (
         <div style={{ position: 'absolute', top: 16, left: 20, zIndex: 4 }}>
           <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)' }}>STORYLINE CONCEPT</div>
           <div style={{ fontSize: 6, color: 'rgba(255,255,255,.2)', marginTop: 2 }}>故事概念方向</div>
         </div>
       )}
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 80px', textAlign: 'center', gap: 18 }}>
+      <div style={{ position: 'absolute', inset: 0, right: imageUrl ? '28%' : 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 70px', textAlign: 'center', gap: 18 }}>
         <div style={{ fontSize: 20, fontWeight: 300, letterSpacing: '0.08em', color: T.white, lineHeight: 1.4, fontFamily: "'STSong','SimSun','Noto Serif CJK SC',serif" }}
           dangerouslySetInnerHTML={{ __html: headline.replace(/「([^」]+)」/g, '<em style="font-style:italic;color:#C8A96E">「$1」</em>') }}
         />
@@ -167,7 +195,7 @@ function SlideCinematic({ n, bg, headline, paras, topLabel }: {
 function SlideOrigin({ n, s, idx }: { n: number; s: IndigoStoryUnit; idx: number }) {
   const o = s.origins[idx]
   const isTwo = idx === 1  // origin 2 has a 2-col layout with map
-  const beatImg = s.beats[idx]?.image_url
+  const beatImg = beatImage(s, idx, ['image_url', 'mood_image_url', 'col2_image_url', 'col3_image_url'])
   return (
     <div style={{ width: W, height: H, background: T.white, position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
       <HBar city={s.city} district={s.district} />
@@ -199,13 +227,20 @@ function SlideOrigin({ n, s, idx }: { n: number; s: IndigoStoryUnit; idx: number
 }
 
 function SlideStorySummary({ n, s }: { n: number; s: IndigoStoryUnit }) {
+  const image = beatImage(s, 4, ['mood_image_url', 'image_url', 'col2_image_url', 'col3_image_url'])
   return (
     <div style={{ width: W, height: H, background: 'linear-gradient(160deg,#12180a 0%,#1e2810 50%,#0e1408 100%)', position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
+      {image && (
+        <>
+          <img src={image} alt="" style={{ position: 'absolute', top: 32, right: 0, bottom: 0, width: '30%', height: 'calc(100% - 32px)', objectFit: 'cover' }} />
+          <div style={{ position: 'absolute', top: 32, bottom: 0, right: '30%', width: 8, background: '#12180a' }} />
+        </>
+      )}
       <div style={{ position: 'absolute', top: 16, left: 20 }}>
         <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)' }}>STORY SUMMARY</div>
         <div style={{ fontSize: 6, color: 'rgba(255,255,255,.2)', marginTop: 2 }}>故事总结</div>
       </div>
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 100px', gap: 24 }}>
+      <div style={{ position: 'absolute', inset: 0, right: image ? '30%' : 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 78px', gap: 24 }}>
         <div style={{ fontSize: 7, color: T.tealLt, letterSpacing: '0.25em', textTransform: 'uppercase' }}>Hotel Indigo {s.hotel_en}</div>
         <div style={{ fontSize: 14, color: T.white, lineHeight: 2, textAlign: 'center', fontWeight: 300 }}>{s.story_summary}</div>
         <div style={{ width: 40, height: 1, background: T.gold, opacity: 0.6 }} />
@@ -228,7 +263,7 @@ function SlideStoryMapping({ n, s }: { n: number; s: IndigoStoryUnit }) {
         {s.beats.map((b, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, borderRadius: 1, position: 'relative', minHeight: 0, overflow: 'hidden', background: colors[i] }}>
-              {b.image_url && <img src={b.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+              {(b.image_url || b.mood_image_url || b.col2_image_url || b.col3_image_url) && <img src={b.image_url || b.mood_image_url || b.col2_image_url || b.col3_image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
               <div style={{ position: 'absolute', top: 7, left: 7, fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,.7)', zIndex: 1, textShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{b.num}</div>
             </div>
             <div style={{ fontSize: 7, fontWeight: 600, color: T.navy, textAlign: 'center', marginTop: 5, lineHeight: 1.4 }}>{b.name_zh}</div>
@@ -246,14 +281,26 @@ function SlideStoryFlowGrid({ n, s }: { n: number; s: IndigoStoryUnit }) {
     <div style={{ width: W, height: H, background: T.white, position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
       <div style={{ position: 'absolute', top: 40, left: 28, fontSize: 18, fontWeight: 300, color: T.navy, letterSpacing: '0.06em' }}>故事流线</div>
       <div style={{ position: 'absolute', top: 85, left: 28, right: 28, bottom: 20, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gridTemplateRows: 'repeat(2,1fr)', gap: 1, background: '#f0f0ee' }}>
-        {s.beats.map((b, i) => (
+        {s.beats.map((b, i) => {
+          const image = beatImage(s, i, ['image_url', 'mood_image_url', 'col2_image_url', 'col3_image_url'])
+          return (
           <div key={i} style={{ background: T.white, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.navy, lineHeight: 1.3 }}>{b.name_zh}</div>
-            <div style={{ fontSize: 6, textTransform: 'uppercase', letterSpacing: '0.12em', color: T.grayM, marginBottom: 4 }}>{b.space_zh}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '86px 1fr', gap: 10, alignItems: 'start', minHeight: 58 }}>
+              {image ? (
+                <img src={image} alt="" style={{ width: 86, height: 58, objectFit: 'cover', borderRadius: 1 }} />
+              ) : (
+                <div style={{ width: 86, height: 58, borderRadius: 1, background: '#ecf0f0' }} />
+              )}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.navy, lineHeight: 1.3 }}>{b.name_zh}</div>
+                <div style={{ fontSize: 6, textTransform: 'uppercase', letterSpacing: '0.12em', color: T.grayM, marginTop: 4 }}>{b.space_zh}</div>
+              </div>
+            </div>
             <div style={{ fontSize: 7, color: T.grayD, lineHeight: 1.8, flex: 1 }}>{b.narrative.slice(0, 50)}…</div>
             <div style={{ fontSize: 6, color: T.teal, borderTop: '1px solid #f0f0ee', paddingTop: 4, marginTop: 2 }}>{b.tagline}</div>
           </div>
-        ))}
+          )
+        })}
       </div>
       <PageNum n={n} dark />
     </div>
@@ -375,6 +422,7 @@ export function buildSlideNodes(story: IndigoStoryUnit): React.ReactNode[] {
       headline={story.taglines[0].zh + '\n' + story.taglines[0].sub}
       paras={story.concept_poem}
       topLabel="STORYLINE CONCEPT"
+      imageUrl={beatImage(story, 1, ['mood_image_url', 'image_url', 'col2_image_url', 'col3_image_url'])}
     />,
     <SlideOrigin n={4} s={story} idx={0} />,
     <SlideOrigin n={5} s={story} idx={1} />,
@@ -385,6 +433,7 @@ export function buildSlideNodes(story: IndigoStoryUnit): React.ReactNode[] {
       headline={story.emotion_headline}
       paras={story.emotion_poem}
       topLabel="STORY EMOTION"
+      imageUrl={beatImage(story, 3, ['mood_image_url', 'image_url', 'col2_image_url', 'col3_image_url'])}
     />,
     <SlideStorySummary n={8} s={story} />,
     <SlideStoryMapping n={9} s={story} />,

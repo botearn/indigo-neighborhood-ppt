@@ -3,9 +3,19 @@ import type { IndigoStoryUnit } from './indigo_types'
 import type { ConciergeMessage } from './Concierge'
 import type { GeoResult } from './MapPicker'
 
-const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ''}/api`
+function apiBaseOrigin() {
+  const configured = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '')
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    const host = window.location.hostname
+    if (host === 'localhost' || host === '127.0.0.1') return ''
+  }
+  return configured
+}
+
+const BASE = `${apiBaseOrigin()}/api`
 const AUTH_STORAGE_KEY = 'indigo.auth.token.v1'
 const AUTH_EXPIRED_EVENT = 'indigo:auth-expired'
+const AUTH_ENTRY_PATHS = new Set(['/auth/login', '/auth/register'])
 
 type HistoryMsg = { role: string; content: string; step?: number }
 
@@ -128,7 +138,7 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
     headers.set('Authorization', `Bearer ${token}`)
   }
   const res = await fetch(`${BASE}${path}`, { ...init, headers })
-  if (res.status === 401) {
+  if (res.status === 401 && !AUTH_ENTRY_PATHS.has(path)) {
     clearAuthToken()
     emitAuthExpired()
   }
