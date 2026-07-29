@@ -91,6 +91,23 @@ class AuthFlowTest(unittest.TestCase):
         history_b = self.client.get("/api/history", headers={"Authorization": f"Bearer {token_b}"})
         self.assertEqual([item["id"] for item in history_b.json()["items"]], [item_b["id"]])
 
+    def test_vercel_origin_is_allowed_for_auth_preflight(self) -> None:
+        res = self.client.options(
+            "/api/auth/me",
+            headers={
+                "Origin": "https://indigo-neighborhood-ppt.vercel.app",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual(
+            res.headers.get("access-control-allow-origin"),
+            "https://indigo-neighborhood-ppt.vercel.app",
+        )
+        self.assertIn("authorization", res.headers.get("access-control-allow-headers", "").lower())
+
 
 if __name__ == "__main__":
     unittest.main()
