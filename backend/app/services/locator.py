@@ -1,4 +1,7 @@
 import json
+import re
+from urllib.parse import quote
+
 import httpx
 from openai import OpenAI
 from app.core.config import settings
@@ -8,6 +11,62 @@ from app.core.models import (
     LocateResponse,
     LocationCandidate,
 )
+
+
+class GeocodeProviderError(RuntimeError):
+    pass
+
+
+CITY_NAMES = (
+    "上海",
+    "北京",
+    "成都",
+    "广州",
+    "深圳",
+    "杭州",
+    "苏州",
+    "南京",
+    "西安",
+    "重庆",
+    "武汉",
+    "厦门",
+    "长沙",
+    "青岛",
+    "太原",
+    "天津",
+    "宁波",
+    "福州",
+    "昆明",
+    "大理",
+    "郑州",
+    "洛阳",
+    "济南",
+    "合肥",
+    "南昌",
+    "贵阳",
+    "海口",
+    "三亚",
+    "乌鲁木齐",
+)
+
+LOCATION_STOPWORDS = {
+    "哪里",
+    "哪个",
+    "这边",
+    "这里",
+    "那边",
+    "那里",
+    "附近",
+    "一个",
+    "几个",
+    "地段",
+    "地方",
+    "区域",
+    "范围",
+    "太大",
+    "兴趣",
+    "有兴趣",
+}
 
 
 SYSTEM_PROMPT = """你是 Hotel Indigo PPT 工具的选址助手。用户在 step 1，需要给你一个**具体的城市 + 街区/地址**作为这次 PPT 的素材；过程可以聊，但落点必须是 geocode_place 工具实际查到的真实地点。
@@ -85,56 +144,231 @@ TOOLS = [
 ]
 
 
+def _unique(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        clean = item.strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        out.append(clean)
+    return out
+
+
+def _normalize_city(name: str) -> str:
+    clean = name.strip()
+    if clean.endswith("市") and len(clean) > 2:
+        clean = clean[:-1]
+    return clean
+
+
+def _looks_like_location_term(term: str) -> bool:
+    clean = term.strip()
+    if not (2 <= len(clean) <= 12):
+        return False
+    if clean in LOCATION_STOPWORDS:
+        return False
+    if not re.search(r"[\u4e00-\u9fffA-Za-z]", clean):
+        return False
+    return True
+
+
+def _extract_location_context(history: list[ConversationMessage] | None) -> list[str]:
+    if not history:
+        return []
+
+    terms: list[str] = []
+    user_texts = [
+        m.content
+        for m in history[-12:]
+        if (m.step is None or m.step == 1) and m.role == "user"
+    ]
+    for text in user_texts:
+        for city in CITY_NAMES:
+            if city in text:
+                terms.append(city)
+                after = text.split(city, 1)[1]
+                suffix = re.match(r"[\s,，、:：-]*([\u4e00-\u9fffA-Za-z0-9·]{2,8})", after)
+                if suffix and _looks_like_location_term(suffix.group(1)):
+                    terms.append(suffix.group(1))
+
+        for token in re.split(r"[\s,，、。！？!?;；:：()（）\"'“”]+", text):
+            token = token.strip()
+            if _looks_like_location_term(token):
+                terms.append(token)
+
+        for match in re.findall(
+            r"([\u4e00-\u9fffA-Za-z0-9·]{2,12}(?:区|县|镇|街道|街|路|巷|里|村|山|湖|河|湾|寺|园|宫|门|桥|坊|场|站|店|城|弄|道))",
+            text,
+        ):
+            if _looks_like_location_term(match):
+                terms.append(match)
+
+    return _unique(terms)[-4:]
+
+
+def _contextual_queries(query: str, history: list[ConversationMessage] | None) -> list[str]:
+    base = re.sub(r"\s+", " ", query).strip()
+    if not base:
+        return []
+
+    context = [term for term in _extract_location_context(history) if term not in base]
+    queries: list[str] = []
+    if context:
+        joined = " ".join(context)
+        queries.extend([
+            f"{joined} {base}",
+            f"{base} {joined}",
+            f"{base}, {', '.join(reversed(context))}, 中国",
+        ])
+    queries.append(base)
+    return _unique(queries)
+
+
+def _context_value(feature: dict, prefix: str) -> str:
+    for ctx in feature.get("context") or []:
+        if ctx.get("id", "").startswith(prefix):
+            return ctx.get("text", "")
+    return ""
+
+
+def _mapbox_feature_to_candidate(feature: dict) -> dict | None:
+    center = feature.get("center")
+    if not center or len(center) < 2:
+        return None
+
+    place_type = (feature.get("place_type") or [""])[0]
+    text = feature.get("text", "")
+    region = _context_value(feature, "region")
+    city = _context_value(feature, "place")
+    if not city and region.endswith("市"):
+        city = region
+    if not city:
+        city = text if place_type == "place" else region
+
+    neighborhood = text
+    if place_type in ("country", "region", "place", "district"):
+        neighborhood = (
+            _context_value(feature, "neighborhood")
+            or _context_value(feature, "locality")
+            or text
+        )
+
+    return {
+        "city": _normalize_city(city),
+        "neighborhood": neighborhood.strip(),
+        "display": feature.get("place_name", ""),
+        "longitude": center[0],
+        "latitude": center[1],
+    }
+
+
 async def _mapbox_geocode(query: str) -> dict | None:
     if not query.strip():
         return None
     if not settings.mapbox_token:
-        raise RuntimeError(
-            "MAPBOX_TOKEN not configured on backend — set it in backend/.env or your deploy env (same value as VITE_MAPBOX_TOKEN on the frontend)"
-        )
-    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{query}.json"
+        raise GeocodeProviderError("MAPBOX_TOKEN is not configured")
+    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{quote(query)}.json"
     params = {
         "access_token": settings.mapbox_token,
         "language": "zh",
-        "limit": 1,
-        "types": "neighborhood,locality,place,district,address,poi",
+        "limit": 5,
     }
+    if re.search(r"[\u4e00-\u9fff]", query):
+        params["country"] = "cn"
     async with httpx.AsyncClient(timeout=10.0) as c:
         resp = await c.get(url, params=params)
+    if resp.status_code in (401, 403):
+        raise GeocodeProviderError("Mapbox geocoding token is invalid or not allowed")
     if resp.status_code != 200:
         return None
     data = resp.json()
     features = data.get("features") or []
-    if not features:
-        return None
-    f0 = features[0]
-    if f0.get("relevance", 0) < 0.5:
-        return None
-    lng, lat = f0["center"]
-    city = ""
-    neighborhood = ""
     for f in features:
-        ptype = (f.get("place_type") or [None])[0]
-        if ptype == "place" and not city:
-            city = f.get("text", "")
-        if ptype in ("neighborhood", "locality", "district") and not neighborhood:
-            neighborhood = f.get("text", "")
-    if not city:
-        for ctx in f0.get("context") or []:
-            if ctx.get("id", "").startswith("place"):
-                city = ctx.get("text", "")
-                break
-        if not city:
-            city = f0.get("text", "")
-    if not neighborhood:
-        neighborhood = f0.get("text", "")
+        if f.get("relevance", 0) < 0.5:
+            continue
+        candidate = _mapbox_feature_to_candidate(f)
+        if candidate:
+            return candidate
+    return None
+
+
+def _nominatim_item_to_candidate(item: dict) -> dict | None:
+    lat = item.get("lat")
+    lon = item.get("lon")
+    if lat is None or lon is None:
+        return None
+
+    address = item.get("address") or {}
+    city = (
+        address.get("city")
+        or address.get("municipality")
+        or address.get("town")
+        or address.get("county")
+        or ""
+    )
+    state = address.get("state") or ""
+    if (not city or city.endswith(("区", "县"))) and state:
+        city = state
+
+    neighborhood = (
+        address.get("road")
+        or address.get("neighbourhood")
+        or address.get("suburb")
+        or address.get("quarter")
+        or address.get("city_district")
+        or item.get("name")
+        or (item.get("display_name", "").split(",")[0])
+        or ""
+    )
+
     return {
-        "city": city,
-        "neighborhood": neighborhood,
-        "display": f0.get("place_name", ""),
-        "longitude": lng,
-        "latitude": lat,
+        "city": _normalize_city(city),
+        "neighborhood": neighborhood.strip(),
+        "display": item.get("display_name", ""),
+        "longitude": float(lon),
+        "latitude": float(lat),
     }
+
+
+async def _nominatim_geocode(query: str) -> dict | None:
+    if not query.strip():
+        return None
+    params = {
+        "q": query,
+        "format": "jsonv2",
+        "limit": 5,
+        "accept-language": "zh-CN,zh,en",
+        "addressdetails": 1,
+    }
+    if re.search(r"[\u4e00-\u9fff]", query):
+        params["countrycodes"] = "cn"
+    headers = {"User-Agent": "indigo-neighborhood-ppt-demo/1.0"}
+    async with httpx.AsyncClient(timeout=12.0, headers=headers) as c:
+        resp = await c.get("https://nominatim.openstreetmap.org/search", params=params)
+    if resp.status_code != 200:
+        return None
+    for item in resp.json() or []:
+        candidate = _nominatim_item_to_candidate(item)
+        if candidate:
+            return candidate
+    return None
+
+
+async def _geocode_place(query: str, history: list[ConversationMessage] | None) -> dict | None:
+    for q in _contextual_queries(query, history):
+        try:
+            result = await _mapbox_geocode(q)
+        except GeocodeProviderError:
+            result = None
+        if result:
+            return result
+
+        fallback = await _nominatim_geocode(q)
+        if fallback:
+            return fallback
+    return None
 
 
 def _client() -> OpenAI:
@@ -171,6 +405,7 @@ async def locate(req: LocateRequest) -> LocateResponse:
 
     geocoded: dict[str, dict] = {}
     committed: dict | None = None
+    latest_geocoded: dict | None = None
 
     for _ in range(5):
         resp = client.chat.completions.create(
@@ -182,7 +417,8 @@ async def locate(req: LocateRequest) -> LocateResponse:
 
         if not msg.tool_calls:
             reply = (msg.content or "").strip() or "嗯？再说一次？"
-            candidate = LocationCandidate(**committed) if committed else None
+            candidate_data = committed or latest_geocoded
+            candidate = LocationCandidate(**candidate_data) if candidate_data else None
             return LocateResponse(reply=reply, candidate=candidate)
 
         messages.append({
@@ -210,9 +446,10 @@ async def locate(req: LocateRequest) -> LocateResponse:
 
             if name == "geocode_place":
                 q = (args.get("query") or "").strip()
-                result = await _mapbox_geocode(q) if q else None
+                result = await _geocode_place(q, req.conversation_history) if q else None
                 if result:
                     geocoded[result["display"]] = result
+                    latest_geocoded = result
                 content = json.dumps(result, ensure_ascii=False) if result else "null"
             elif name == "confirm_place":
                 display = (args.get("display") or "").strip()
@@ -221,9 +458,10 @@ async def locate(req: LocateRequest) -> LocateResponse:
                     content = json.dumps({"ok": True}, ensure_ascii=False)
                 else:
                     # display may come from a previous conversation turn; try to recover via geocode
-                    recovered = await _mapbox_geocode(display) if display else None
+                    recovered = await _geocode_place(display, req.conversation_history) if display else None
                     if recovered:
                         geocoded[recovered["display"]] = recovered
+                        latest_geocoded = recovered
                         committed = recovered
                         content = json.dumps({"ok": True}, ensure_ascii=False)
                     else:
@@ -240,7 +478,8 @@ async def locate(req: LocateRequest) -> LocateResponse:
                 "content": content,
             })
 
-    candidate = LocationCandidate(**committed) if committed else None
+    candidate_data = committed or latest_geocoded
+    candidate = LocationCandidate(**candidate_data) if candidate_data else None
     return LocateResponse(
         reply="想得有点多 — 再说一次具体位置？",
         candidate=candidate,
