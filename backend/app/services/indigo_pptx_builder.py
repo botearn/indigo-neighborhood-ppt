@@ -8,6 +8,7 @@ from io import BytesIO
 from pptx import Presentation
 from pptx.util import Cm, Pt, Emu
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Cm
 from pptx.oxml.ns import qn
@@ -73,6 +74,18 @@ def _add_rect(slide, left, top, width, height, fill: RGBColor | None = None,
         shape.fill.fore_color.rgb = fill
     else:
         shape.fill.background()
+    if line_color:
+        shape.line.color.rgb = line_color
+        shape.line.width = Pt(line_width)
+    return shape
+
+
+def _add_oval(slide, left, top, width, height, fill: RGBColor,
+              line_color: RGBColor | None = None, line_width: float = 0):
+    shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.OVAL, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = fill
+    shape.line.fill.background()
     if line_color:
         shape.line.color.rgb = line_color
         shape.line.width = Pt(line_width)
@@ -247,6 +260,17 @@ def _resolve_image(url: str, frame_width: Emu | None = None, frame_height: Emu |
     return None
 
 
+def _split_origin_body(text: str) -> tuple[str, str]:
+    if len(text) < 40:
+        return text, ""
+    midpoint = len(text) // 2
+    candidates = [i for i, ch in enumerate(text) if ch in "。；，、" and 12 < i < len(text) - 12]
+    if not candidates:
+        return text[:midpoint], text[midpoint:]
+    split_at = min(candidates, key=lambda i: abs(i - midpoint)) + 1
+    return text[:split_at], text[split_at:]
+
+
 # ── Slide builders ────────────────────────────────────────────────────────
 
 def _slide01_cover(prs, s: IndigoStoryUnit):
@@ -334,29 +358,85 @@ def _slide_cinematic(prs, n: int, s: IndigoStoryUnit, bg: RGBColor,
 
 def _slide_origin(prs, n: int, s: IndigoStoryUnit, idx: int):
     slide = _new_slide(prs)
-    _set_bg(slide, WHITE)
-    _hbar(slide, s.city, s.district)
-    _sec_label(slide, "STORYLINE CONCEPT", "故事概念方向")
     o = s.origins[idx]
-    # origin 页用对应 beat 的图片
     beat_img = _beat_image(s, idx, "image_url", "mood_image_url", "col2_image_url", "col3_image_url")
-    photo_w = Cm(11)
-    _img_placeholder(slide, 0, Cm(1.2), photo_w, SH - Cm(1.2),
-                     label=o.title, bg=ORIGIN_BG[idx],
-                     image_url=beat_img)
-    tx = photo_w + Cm(0.5)
-    tw = SW - tx - Cm(0.5)
-    _add_text(slide, f"○ ORIGIN  ·  {o.title}",
-              tx, Cm(2.0), tw, Cm(0.6),
-              size=6, color=TEAL, spacing=0.15)
+
+    if idx == 0:
+        _set_bg(slide, WHITE)
+        _hbar(slide, s.city, s.district)
+        _sec_label(slide, "STORYLINE CONCEPT", "故事概念方向")
+        photo_w = Cm(12.4)
+        _img_placeholder(slide, 0, Cm(1.2), photo_w, SH - Cm(1.2),
+                         label=o.title, bg=ORIGIN_BG[idx], image_url=beat_img)
+        _add_rect(slide, photo_w, Cm(1.2), Cm(0.08), SH - Cm(1.2), fill=TEAL)
+        tx = photo_w + Cm(1.0)
+        tw = SW - tx - Cm(1.2)
+        _add_text(slide, f"ORIGIN 0{idx + 1}  ·  {o.title}",
+                  tx, Cm(2.15), tw, Cm(0.55),
+                  size=6, color=TEAL, spacing=0.18)
+        _add_text(slide, o.headline,
+                  tx, Cm(3.1), tw - Cm(1.2), Cm(2.1),
+                  size=14, bold=True, color=NAVY, wrap=True, line_spacing=22,
+                  font="Songti SC")
+        _add_text(slide, o.body,
+                  tx, Cm(5.9), tw, Cm(8.6),
+                  size=8, color=GRAY_D, wrap=True, line_spacing=14)
+        _add_text(slide, s.story_summary,
+                  tx, SH - Cm(2.5), tw - Cm(2.2), Cm(0.8),
+                  size=6.5, color=TEAL, wrap=True)
+        _page_num(slide, n, dark=True)
+        return
+
+    if idx == 1:
+        _set_bg(slide, WHITE)
+        _hbar(slide, s.city, s.district)
+        _img_placeholder(slide, 0, Cm(1.2), SW, Cm(7.0),
+                         label=o.title, bg=ORIGIN_BG[idx], image_url=beat_img)
+        _add_rect(slide, Cm(1.2), Cm(6.85), SW - Cm(2.4), Cm(3.1), fill=WHITE)
+        _add_text(slide, f"ORIGIN 0{idx + 1}  ·  {o.title}",
+                  Cm(2.0), Cm(7.25), Cm(9), Cm(0.55),
+                  size=6, color=TEAL, spacing=0.18)
+        _add_text(slide, o.headline,
+                  Cm(2.0), Cm(8.05), SW - Cm(4), Cm(1.5),
+                  size=14.5, bold=True, color=NAVY, wrap=True, line_spacing=22,
+                  font="Songti SC")
+        left_body, right_body = _split_origin_body(o.body)
+        _add_text(slide, left_body,
+                  Cm(2.0), Cm(11.1), Cm(13.6), Cm(4.2),
+                  size=7.8, color=GRAY_D, wrap=True, line_spacing=13)
+        _add_text(slide, right_body,
+                  Cm(17.2), Cm(11.1), Cm(13.8), Cm(4.2),
+                  size=7.8, color=GRAY_D, wrap=True, line_spacing=13)
+        _add_text(slide, "NEIGHBORHOOD MEMORY",
+                  Cm(2.0), SH - Cm(2.0), Cm(12), Cm(0.55),
+                  size=6, color=GRAY_M, spacing=0.22)
+        _page_num(slide, n, dark=True)
+        return
+
+    _set_bg(slide, ORIGIN_BG[idx])
+    _hbar(slide, s.city, s.district)
+    image_w = Cm(13.8)
+    image_x = SW - image_w
+    _img_placeholder(slide, image_x, Cm(1.2), image_w, SH - Cm(1.2),
+                     label=o.title, bg=ORIGIN_BG[idx], image_url=beat_img)
+    _add_rect(slide, image_x - Cm(0.18), Cm(1.2), Cm(0.18), SH - Cm(1.2), fill=ORIGIN_BG[idx])
+    _add_text(slide, f"ORIGIN 0{idx + 1}",
+              Cm(1.2), Cm(2.1), Cm(7), Cm(0.5),
+              size=6, color=TEAL_L, spacing=0.22)
+    _add_text(slide, o.title,
+              Cm(1.2), Cm(2.75), Cm(9), Cm(0.8),
+              size=8, color=GOLD, spacing=0.12)
     _add_text(slide, o.headline,
-              tx, Cm(2.7), tw, Cm(2.0),
-              size=11.5, bold=True, color=NAVY, wrap=True, line_spacing=18,
+              Cm(1.2), Cm(4.35), image_x - Cm(2.6), Cm(3.0),
+              size=18, bold=True, color=WHITE, wrap=True, line_spacing=27,
               font="Songti SC")
     _add_text(slide, o.body,
-              tx, Cm(5.0), tw, SH - Cm(5.5),
-              size=7.5, color=GRAY_D, wrap=True, line_spacing=13)
-    _page_num(slide, n, dark=True)
+              Cm(1.2), Cm(8.3), image_x - Cm(3.0), Cm(5.8),
+              size=8, color=RGBColor(0xD6, 0xD6, 0xCC), wrap=True, line_spacing=14)
+    _add_text(slide, f"{s.city}  ·  {s.district}",
+              Cm(1.2), SH - Cm(2.1), Cm(10), Cm(0.6),
+              size=6.5, color=TEAL_L, spacing=0.18)
+    _page_num(slide, n)
 
 
 def _slide_story_summary(prs, n: int, s: IndigoStoryUnit):
@@ -416,30 +496,51 @@ def _slide_story_flow_grid(prs, n: int, s: IndigoStoryUnit):
     _set_bg(slide, WHITE)
     _add_text(slide, "故事流线", Cm(1), Cm(1.3), Cm(8), Cm(0.9),
               size=17, color=NAVY, spacing=0.06, font="Songti SC")
-    col_w = (SW - Cm(1.8)) / 3
-    row_h = (SH - Cm(3.6)) / 2
+    _add_text(slide, s.story_summary,
+              Cm(10.5), Cm(1.45), SW - Cm(12), Cm(0.8),
+              size=7.5, color=GRAY_M, wrap=True, align=PP_ALIGN.RIGHT)
+
+    dot_y = Cm(10.05)
+    first_center = Cm(3.2)
+    last_center = Cm(30.35)
+    _add_rect(slide, first_center, dot_y, last_center - first_center, Cm(0.05),
+              fill=RGBColor(0xCC, 0xDD, 0xDD))
+
+    img_w = Cm(4.8)
+    img_h = Cm(2.75)
+    x_positions = [Cm(0.8), Cm(6.25), Cm(11.7), Cm(17.15), Cm(22.6), Cm(28.05)]
     for i, beat in enumerate(s.beats):
-        col = i % 3
-        row = i // 3
-        x = Cm(0.9) + col * col_w
-        y = Cm(3.0) + row * row_h
+        x = x_positions[i]
+        center_x = x + img_w / 2
+        is_top = i % 2 == 0
+        img_y = Cm(3.35) if is_top else Cm(10.85)
+        text_y = Cm(6.35) if is_top else Cm(13.75)
         image_url = _beat_image(s, i, "image_url", "mood_image_url", "col2_image_url", "col3_image_url")
-        _add_rect(slide, x, y, col_w - Cm(0.1), row_h - Cm(0.1),
-                  fill=WHITE, line_color=GRAY_L, line_width=0.5)
-        _img_placeholder(slide, x + Cm(0.35), y + Cm(0.4), Cm(3.2), Cm(2.2),
+        if is_top:
+            _add_rect(slide, center_x, img_y + img_h, Cm(0.04), dot_y - img_y - img_h,
+                      fill=RGBColor(0xCC, 0xDD, 0xDD))
+        else:
+            _add_rect(slide, center_x, dot_y, Cm(0.04), img_y - dot_y,
+                      fill=RGBColor(0xCC, 0xDD, 0xDD))
+        _add_oval(slide, center_x - Cm(0.16), dot_y - Cm(0.16), Cm(0.32), Cm(0.32),
+                  fill=TEAL if i % 2 == 0 else GOLD, line_color=WHITE, line_width=0.75)
+        _img_placeholder(slide, x, img_y, img_w, img_h,
                          bg=RGBColor(0xEC, 0xF0, 0xF0), image_url=image_url)
-        _add_text(slide, beat.name_zh, x + Cm(3.85), y + Cm(0.4),
-                  col_w - Cm(4.35), Cm(1.0),
-                  size=11, bold=True, color=NAVY, font="Songti SC")
-        _add_text(slide, beat.space_zh, x + Cm(3.85), y + Cm(1.5),
-                  col_w - Cm(4.35), Cm(0.45),
-                  size=6, color=GRAY_M, spacing=0.12)
-        _add_text(slide, beat.narrative[:50] + "…", x + Cm(0.4), y + Cm(2.9),
-                  col_w - Cm(0.9), row_h - Cm(2.6),
-                  size=7, color=GRAY_D, wrap=True, line_spacing=12)
-        _add_text(slide, beat.tagline, x + Cm(0.4), y + row_h - Cm(0.75),
-                  col_w - Cm(0.9), Cm(0.5),
-                  size=6.5, color=TEAL)
+        _add_text(slide, beat.num,
+                  x, text_y, Cm(1.0), Cm(0.45),
+                  size=6.5, bold=True, color=TEAL, spacing=0.12)
+        _add_text(slide, beat.name_zh,
+                  x + Cm(1.1), text_y - Cm(0.05), img_w - Cm(1.1), Cm(0.65),
+                  size=8.2, bold=True, color=NAVY, font="Songti SC", wrap=True)
+        _add_text(slide, beat.space_zh,
+                  x, text_y + Cm(0.72), img_w, Cm(0.5),
+                  size=5.5, color=GRAY_M, spacing=0.08, wrap=True)
+        _add_text(slide, beat.narrative[:42] + "…",
+                  x, text_y + Cm(1.35), img_w + Cm(0.25), Cm(1.45),
+                  size=6.2, color=GRAY_D, wrap=True, line_spacing=10)
+        _add_text(slide, beat.tagline,
+                  x, text_y + Cm(2.95), img_w, Cm(0.45),
+                  size=5.8, color=TEAL, wrap=True)
     _page_num(slide, n, dark=True)
 
 

@@ -75,6 +75,14 @@ def _picture_count(slide) -> int:
     return sum(1 for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE)
 
 
+def _picture_frames(slide) -> list[tuple[int, int, int, int]]:
+    return [
+        (shape.left, shape.top, shape.width, shape.height)
+        for shape in slide.shapes
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+    ]
+
+
 class IndigoPptxImagesTest(unittest.TestCase):
     def test_first_ten_slides_allocate_available_beat_images(self) -> None:
         deck = Presentation(io.BytesIO(build_indigo_pptx(_story())))
@@ -96,6 +104,20 @@ class IndigoPptxImagesTest(unittest.TestCase):
                 frame_ratio = shape.width / shape.height
                 with self.subTest(slide_no=slide_no, shape_id=shape.shape_id):
                     self.assertAlmostEqual(image_ratio, frame_ratio, delta=0.02)
+
+    def test_origin_slides_use_varied_editorial_layouts(self) -> None:
+        deck = Presentation(io.BytesIO(build_indigo_pptx(_story())))
+
+        origin_frames = [_picture_frames(deck.slides[i])[0] for i in range(3, 6)]
+
+        self.assertEqual(len(set(origin_frames)), 3)
+
+    def test_story_flow_uses_staggered_image_route(self) -> None:
+        deck = Presentation(io.BytesIO(build_indigo_pptx(_story())))
+        frames = _picture_frames(deck.slides[9])
+
+        self.assertEqual(len(frames), 6)
+        self.assertGreaterEqual(len({frame[1] for frame in frames}), 2)
 
 
 if __name__ == "__main__":
