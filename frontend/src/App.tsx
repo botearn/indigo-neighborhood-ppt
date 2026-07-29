@@ -28,6 +28,7 @@ import { IndigoExportStage } from './stages/IndigoExportStage'
 import { loadState, saveState, clearState } from './session'
 import { FastLane } from './FastLane'
 import { AuthScreen } from './AuthScreen'
+import { Dashboard } from './Dashboard'
 
 const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
   { num: 1, label: '选址', sublabel: 'Pick a neighborhood' },
@@ -71,8 +72,9 @@ export default function App() {
   const [history, setHistory] = useState<GenerationHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
-  const [appMode, setAppMode] = useState<AppMode>(persisted ? 'guided' : 'home')
+  const [appMode, setAppMode] = useState<AppMode>('home')
   const [fastInitialStory, setFastInitialStory] = useState<IndigoStoryUnit | null>(null)
+  const [openingHistoryId, setOpeningHistoryId] = useState<string | null>(null)
   const [step, setStep] = useState(persisted?.step ?? 1)
   const [viewState, setViewState] = useState(() =>
     persisted?.candidate
@@ -487,6 +489,21 @@ export default function App() {
     void refreshHistory()
   }
 
+  function handleStartFast() {
+    setFastInitialStory(null)
+    setAppMode('fast')
+  }
+
+  function handleStartGuided() {
+    setStep(1)
+    setStory(null)
+    setCandidate(null)
+    setMessages([])
+    setError('')
+    clearState()
+    setAppMode('guided')
+  }
+
   async function handleLogout() {
     try {
       await logout()
@@ -504,6 +521,7 @@ export default function App() {
   }
 
   async function openHistoryItem(item: GenerationHistoryItem) {
+    setOpeningHistoryId(item.id)
     setHistoryError('')
     try {
       const detail = await getHistoryItem(item.id)
@@ -527,6 +545,8 @@ export default function App() {
       setAppMode('guided')
     } catch (e) {
       setHistoryError(e instanceof Error ? e.message : '历史记录打开失败')
+    } finally {
+      setOpeningHistoryId(null)
     }
   }
 
@@ -584,114 +604,18 @@ export default function App() {
 
   if (appMode === 'home') {
     return (
-      <div className="h-screen flex flex-col bg-[#0f0f0f]">
-        <header className="h-16 px-6 flex items-center justify-between border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm">
-          <div className="flex items-baseline gap-3">
-            <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">Hotel Indigo</span>
-            <span className="text-[15px] font-light text-[#f5f5f0]/85">Neighborhood Storytelling</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-[#6b7280]">{user.email}</span>
-            <button
-              onClick={handleLogout}
-              className="font-mono text-[10px] tracking-[0.18em] uppercase text-[#6b7280] hover:text-[#a8a8a0] transition"
-            >
-              退出
-            </button>
-          </div>
-        </header>
-        <main className="flex-1 flex items-center justify-center px-6">
-          <div className="w-full max-w-[860px] flex flex-col gap-10">
-            <div className="text-center">
-              <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#c8a96e] mb-3">选择模式</div>
-              <h1 className="text-[28px] font-light text-[#f5f5f0]">从哪里开始？</h1>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              {/* Fast lane */}
-              <button
-                onClick={() => setAppMode('fast')}
-                className="group text-left bg-[#1a1a18] hover:bg-[#1e1e1c] border border-[#2a2a28] hover:border-[#c8a96e]/40 rounded-lg p-7 transition-all"
-              >
-                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#c8a96e] mb-4">FAST LANE</div>
-                <div className="text-[20px] font-light text-[#f5f5f0] mb-2 group-hover:text-white transition">一键生成</div>
-                <div className="text-sm text-[#6b7280] leading-relaxed mb-6">
-                  我知道地点。输入城市和街区，系统自动生成故事与图片，最后只微调排版。
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  {['输入城市 + 街区', '自动生成故事', '自动生成图片', '微调排版 → 导出'].map((s, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-[#6b7280]">
-                      <span className="font-mono text-[#c8a96e]/60">{i + 1}</span>
-                      <span>{s}</span>
-                    </div>
-                  ))}
-                </div>
-              </button>
-
-              {/* Guided */}
-              <button
-                onClick={() => setAppMode('guided')}
-                className="group text-left bg-[#1a1a18] hover:bg-[#1e1e1c] border border-[#2a2a28] hover:border-[#2d7a7a]/50 rounded-lg p-7 transition-all"
-              >
-                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#2d7a7a] mb-4">GUIDED</div>
-                <div className="text-[20px] font-light text-[#f5f5f0] mb-2 group-hover:text-white transition">逐步创作</div>
-                <div className="text-sm text-[#6b7280] leading-relaxed mb-6">
-                  帮我找地点。通过对话选址，逐步确认故事、图片、结构，全程可介入调整。
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  {['对话选址', '确认故事文字', '调整图片', '排版 → 导出'].map((s, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-[#6b7280]">
-                      <span className="font-mono text-[#2d7a7a]/60">{i + 1}</span>
-                      <span>{s}</span>
-                    </div>
-                  ))}
-                </div>
-              </button>
-            </div>
-            <section className="border-t border-[#1e1e1c] pt-6">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">History</div>
-                  <div className="text-sm text-[#f5f5f0]/80 mt-1">历史生成记录</div>
-                </div>
-                <button
-                  onClick={() => void refreshHistory()}
-                  className="font-mono text-[10px] tracking-[0.18em] uppercase text-[#6b7280] hover:text-[#a8a8a0] transition"
-                >
-                  刷新
-                </button>
-              </div>
-              {historyError && (
-                <div className="mb-3 text-sm text-red-400 bg-red-900/20 border border-red-900/30 rounded px-4 py-3">
-                  {historyError}
-                </div>
-              )}
-              {historyLoading ? (
-                <div className="text-sm text-[#6b7280]">正在读取历史…</div>
-              ) : history.length === 0 ? (
-                <div className="text-sm text-[#6b7280]">还没有历史记录。生成完成后会自动保存在这里。</div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {history.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => void openHistoryItem(item)}
-                      className="text-left bg-[#1a1a18] hover:bg-[#1e1e1c] border border-[#2a2a28] hover:border-[#c8a96e]/35 rounded p-4 transition"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-[#f5f5f0]">{item.title}</span>
-                        <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-[#c8a96e]/70">{item.mode}</span>
-                      </div>
-                      <div className="text-xs text-[#6b7280] mt-2">
-                        {new Date(item.updated_at * 1000).toLocaleString()}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        </main>
-      </div>
+      <Dashboard
+        user={user}
+        history={history}
+        historyLoading={historyLoading}
+        historyError={historyError}
+        openingHistoryId={openingHistoryId}
+        onRefreshHistory={() => void refreshHistory()}
+        onOpenHistory={item => void openHistoryItem(item)}
+        onStartFast={handleStartFast}
+        onStartGuided={handleStartGuided}
+        onLogout={() => void handleLogout()}
+      />
     )
   }
 
