@@ -175,7 +175,7 @@ def _img_placeholder(slide, left, top, width, height, label: str = "",
                      bg: RGBColor = RGBColor(0xCC, 0xD4, 0xD4),
                      image_url: str | None = None):
     if image_url:
-        img_stream = _resolve_image(image_url)
+        img_stream = _resolve_image(image_url, width, height)
         if img_stream:
             slide.shapes.add_picture(img_stream, left, top, width, height)
             return
@@ -199,7 +199,26 @@ def _beat_image(s: IndigoStoryUnit, idx: int, *fields: str) -> str | None:
     return None
 
 
-def _resolve_image(url: str) -> BytesIO | None:
+def _center_crop_to_ratio(img, target_ratio: float):
+    width, height = img.size
+    if width <= 0 or height <= 0 or target_ratio <= 0:
+        return img
+
+    current_ratio = width / height
+    if abs(current_ratio - target_ratio) < 0.01:
+        return img
+
+    if current_ratio > target_ratio:
+        new_width = int(height * target_ratio)
+        left = max(0, (width - new_width) // 2)
+        return img.crop((left, 0, left + new_width, height))
+
+    new_height = int(width / target_ratio)
+    top = max(0, (height - new_height) // 2)
+    return img.crop((0, top, width, top + new_height))
+
+
+def _resolve_image(url: str, frame_width: Emu | None = None, frame_height: Emu | None = None) -> BytesIO | None:
     """Turn a data:…;base64 URL or http(s) URL into a JPEG BytesIO for python-pptx."""
     if not url:
         return None
@@ -214,8 +233,11 @@ def _resolve_image(url: str) -> BytesIO | None:
             r.raise_for_status()
             raw = r.content
         if raw:
-            from PIL import Image
+            from PIL import Image, ImageOps
             img = Image.open(BytesIO(raw))
+            img = ImageOps.exif_transpose(img)
+            if frame_width and frame_height:
+                img = _center_crop_to_ratio(img, float(frame_width) / float(frame_height))
             buf = BytesIO()
             img.convert("RGB").save(buf, format="JPEG", quality=85)
             buf.seek(0)

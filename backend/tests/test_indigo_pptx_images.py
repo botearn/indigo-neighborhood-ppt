@@ -16,7 +16,7 @@ from app.services.indigo_pptx_builder import build_indigo_pptx  # noqa: E402
 
 def _image_url(seed: int) -> str:
     color = ((seed * 45) % 255, (seed * 75) % 255, (seed * 105) % 255)
-    image = Image.new("RGB", (16, 12), color)
+    image = Image.new("RGB", (1600, 900), color)
     buf = io.BytesIO()
     image.save(buf, format="PNG")
     payload = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -83,6 +83,19 @@ class IndigoPptxImagesTest(unittest.TestCase):
         for slide_no in range(1, 11):
             with self.subTest(slide_no=slide_no):
                 self.assertGreater(_picture_count(deck.slides[slide_no - 1]), 0)
+
+    def test_embedded_images_match_placeholder_aspect_ratio(self) -> None:
+        deck = Presentation(io.BytesIO(build_indigo_pptx(_story())))
+
+        for slide_no, slide in enumerate(deck.slides, start=1):
+            for shape in slide.shapes:
+                if shape.shape_type != MSO_SHAPE_TYPE.PICTURE:
+                    continue
+                image_width, image_height = shape.image.size
+                image_ratio = image_width / image_height
+                frame_ratio = shape.width / shape.height
+                with self.subTest(slide_no=slide_no, shape_id=shape.shape_id):
+                    self.assertAlmostEqual(image_ratio, frame_ratio, delta=0.02)
 
 
 if __name__ == "__main__":
