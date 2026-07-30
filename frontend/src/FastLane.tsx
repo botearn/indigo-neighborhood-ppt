@@ -8,6 +8,7 @@ import {
   type GenerationHistoryItem,
 } from './api'
 import { IndigoPreview } from './IndigoSlides'
+import { BackButton } from './BackButton'
 
 type Phase = 'idle' | 'generating' | 'preview' | 'exporting'
 
@@ -132,14 +133,11 @@ export function FastLane({
     <div className="h-screen flex flex-col bg-[#0f0f0f]">
       {/* Header */}
       <header className="h-16 px-6 flex items-center justify-between border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm shrink-0">
-        <div className="flex items-baseline gap-3">
-          <button
+        <div className="flex items-center gap-3">
+          <BackButton
             onClick={onBack}
             disabled={phase === 'generating' || phase === 'exporting'}
-            className="font-mono text-[10px] tracking-wider text-[#6b7280] hover:text-[#a8a8a0] disabled:opacity-30 disabled:cursor-not-allowed transition mr-3"
-          >
-            ←
-          </button>
+          />
           <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">Hotel Indigo</span>
           <span className="text-[15px] font-light text-[#f5f5f0]/85">一键生成</span>
           {story && phase === 'preview' && (

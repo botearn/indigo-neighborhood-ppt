@@ -1,3 +1,5 @@
+import { BackButton } from './BackButton'
+
 export type StepDef = {
   num: number
   label: string
@@ -14,15 +16,8 @@ type Props = {
 export function StepNav({ steps, current, onJump, onHome }: Props) {
   return (
     <header className="h-16 px-6 flex items-center justify-between border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm relative z-30">
-      <div className="flex items-baseline gap-3">
-        {onHome && (
-          <button
-            onClick={onHome}
-            className="font-mono text-[10px] tracking-wider text-[#6b7280] hover:text-[#a8a8a0] transition mr-2"
-          >
-            ←
-          </button>
-        )}
+      <div className="flex items-center gap-3">
+        {onHome && <BackButton onClick={onHome} />}
         <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">
           Hotel Indigo
         </span>
