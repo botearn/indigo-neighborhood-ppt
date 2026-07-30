@@ -130,6 +130,17 @@ class IndigoPptxImagesTest(unittest.TestCase):
         self.assertIn("空间触点", slide_text)
         self.assertNotIn("故事流线", slide_text)
 
+    def test_deck_does_not_include_branding_watermark(self) -> None:
+        deck = Presentation(io.BytesIO(build_indigo_pptx(_story())))
+        deck_text = "\n".join(
+            shape.text
+            for slide in deck.slides
+            for shape in slide.shapes
+            if hasattr(shape, "text")
+        )
+
+        self.assertNotIn("BRANDING & DESIGN", deck_text)
+
     def test_repeated_remote_image_is_downloaded_once_per_deck(self) -> None:
         story = _story()
         image_url = "https://images.example.test/shared.png"
