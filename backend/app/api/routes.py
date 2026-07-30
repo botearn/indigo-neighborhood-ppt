@@ -1,5 +1,5 @@
 from urllib.parse import quote
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
@@ -15,10 +15,21 @@ from app.core.models import (
     LocateResponse,
     IndigoGenerateRequest,
     IndigoEditRequest,
+    IndigoImageJobRequest,
+    IndigoImageJobResponse,
     IndigoSingleImageRequest,
     IndigoStoryUnit,
 )
-from app.services import generator, ppt_builder, image_generator, locator, indigo_generator, indigo_pptx_builder
+from app.services import (
+    generator,
+    image_generator,
+    image_jobs,
+    indigo_generator,
+    indigo_pptx_builder,
+    locator,
+    ppt_builder,
+)
+from app import worker
 
 
 class ExportRequest(BaseModel):
@@ -34,7 +45,7 @@ async def indigo_generate(req: IndigoGenerateRequest, user: AuthUser = Depends(r
     try:
         story = await indigo_generator.generate_indigo(req)
         story = await image_generator.generate_indigo_images(story)
-        auth.create_history(
+        history = auth.create_history(
             user_id=user.id,
             mode="fast",
             city=story.city,
@@ -42,6 +53,8 @@ async def indigo_generate(req: IndigoGenerateRequest, user: AuthUser = Depends(r
             title=f"{story.city} {story.district}",
             story=story,
         )
+        story.history_id = history["id"]
+        auth.update_history_story(user.id, history["id"], story)
         return story
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -52,7 +65,7 @@ async def indigo_generate(req: IndigoGenerateRequest, user: AuthUser = Depends(r
 async def indigo_generate_text(req: IndigoGenerateRequest, user: AuthUser = Depends(require_user)):
     try:
         story = await indigo_generator.generate_indigo(req)
-        auth.create_history(
+        history = auth.create_history(
             user_id=user.id,
             mode="guided",
             city=story.city,
@@ -60,6 +73,8 @@ async def indigo_generate_text(req: IndigoGenerateRequest, user: AuthUser = Depe
             title=f"{story.city} {story.district}",
             story=story,
         )
+        story.history_id = history["id"]
+        auth.update_history_story(user.id, history["id"], story)
         return story
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -80,6 +95,108 @@ async def indigo_images(story: IndigoStoryUnit, user: AuthUser = Depends(require
         return await image_generator.generate_indigo_images(story)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _owned_image_job(job_id: str, user: AuthUser):
+    try:
+        store = image_jobs.get_image_job_store()
+        owner_id = await run_in_threadpool(store.owner_id, job_id)
+        if owner_id != user.id:
+            raise image_jobs.ImageJobNotFound(job_id)
+        return store
+    except image_jobs.ImageJobNotFound:
+        raise HTTPException(status_code=404, detail="Image job not found")
+    except image_jobs.ImageJobUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+async def _image_job_response(store, job_id: str, user: AuthUser):
+    job = await run_in_threadpool(store.get, job_id)
+    if (
+        job.status in {"completed", "partial"}
+        and await run_in_threadpool(store.history_needs_sync, job_id)
+    ):
+        history_id = await run_in_threadpool(store.history_id, job_id)
+        if history_id:
+            updated = await run_in_threadpool(
+                auth.update_history_story,
+                user.id,
+                history_id,
+                job.story,
+            )
+            if updated:
+                await run_in_threadpool(store.mark_history_synced, job_id)
+    return job
+
+
+@router.post(
+    "/indigo/image-jobs",
+    response_model=IndigoImageJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def indigo_image_job_create(
+    req: IndigoImageJobRequest,
+    user: AuthUser = Depends(require_user),
+):
+    try:
+        history_id = req.history_id or req.story_unit.history_id
+        if history_id:
+            auth.get_history(user.id, history_id)
+        store = image_jobs.get_image_job_store()
+        job = await run_in_threadpool(
+            store.create,
+            user_id=user.id,
+            story=req.story_unit,
+            history_id=history_id,
+        )
+        targets = await run_in_threadpool(store.pending_targets, job.id)
+        await run_in_threadpool(worker.enqueue_image_job, job.id, targets)
+        if history_id:
+            await run_in_threadpool(
+                auth.update_history_story,
+                user.id,
+                history_id,
+                job.story,
+            )
+        return await _image_job_response(store, job.id, user)
+    except HTTPException:
+        raise
+    except image_jobs.ImageJobUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        if "job" in locals():
+            await run_in_threadpool(store.mark_dispatch_failed, job.id, str(e))
+        raise HTTPException(status_code=503, detail="Image job could not be queued")
+
+
+@router.get("/indigo/image-jobs/{job_id}", response_model=IndigoImageJobResponse)
+async def indigo_image_job_status(job_id: str, user: AuthUser = Depends(require_user)):
+    store = await _owned_image_job(job_id, user)
+    return await _image_job_response(store, job_id, user)
+
+
+@router.post(
+    "/indigo/image-jobs/{job_id}/retry",
+    response_model=IndigoImageJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def indigo_image_job_retry(job_id: str, user: AuthUser = Depends(require_user)):
+    store = await _owned_image_job(job_id, user)
+    targets = await run_in_threadpool(store.prepare_retry, job_id)
+    if targets:
+        try:
+            await run_in_threadpool(worker.enqueue_image_job, job_id, targets)
+        except Exception as e:
+            await run_in_threadpool(store.mark_dispatch_failed, job_id, str(e))
+            raise HTTPException(status_code=503, detail="Image retry could not be queued")
+    return await _image_job_response(store, job_id, user)
+
+
+@router.delete("/indigo/image-jobs/{job_id}", response_model=IndigoImageJobResponse)
+async def indigo_image_job_cancel(job_id: str, user: AuthUser = Depends(require_user)):
+    store = await _owned_image_job(job_id, user)
+    await run_in_threadpool(worker.revoke_image_job, job_id)
+    return await _image_job_response(store, job_id, user)
 
 
 @router.post("/indigo/images/single", response_model=SingleImageResponse)

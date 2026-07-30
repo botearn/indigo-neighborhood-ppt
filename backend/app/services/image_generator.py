@@ -53,7 +53,7 @@ async def _gen_fal(prompt: str) -> str:
     return result["images"][0]["url"]
 
 
-async def _gen_relay(prompt: str) -> str:
+async def _gen_relay(prompt: str, idempotency_key: str | None = None) -> str:
     if not settings.relay_api_key:
         raise RuntimeError("RELAY_API_KEY is not set")
     url = f"{settings.relay_base_url.rstrip('/')}/images/generations"
@@ -61,6 +61,8 @@ async def _gen_relay(prompt: str) -> str:
         "Authorization": f"Bearer {settings.relay_api_key}",
         "Content-Type": "application/json",
     }
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
     payload = {
         "model": settings.relay_image_model,
         "prompt": prompt,
@@ -135,9 +137,9 @@ def _beat_query(story: StoryUnit, beat_index: int) -> str:
     return f"{kw} {story.neighborhood} {story.city}".strip()
 
 
-async def _gen(prompt: str) -> str:
+async def _gen(prompt: str, idempotency_key: str | None = None) -> str:
     if settings.image_provider == "relay":
-        return await _gen_relay(prompt)
+        return await _gen_relay(prompt, idempotency_key=idempotency_key)
     if settings.image_provider == "gemini":
         return await _gen_gemini(prompt)
     return await _gen_fal(prompt)
@@ -218,38 +220,36 @@ def _indigo_col3_prompt(beat, city: str, district: str) -> str:
 
 
 async def generate_indigo_images(story: IndigoStoryUnit) -> IndigoStoryUnit:
-    city, district = story.city, story.district
-    import asyncio
-    for beat in story.beats:
-        if settings.image_provider == "unsplash":
-            beat.image_url = await _search_unsplash(
-                f"{beat.name_zh} {city} {district} editorial"
-            ) or None
-            beat.mood_image_url = await _search_unsplash(
-                f"{beat.mb_concept} {city} {district} texture"
-            ) or None
-            beat.col2_image_url = await _search_unsplash(
-                f"{beat.mb_col2_title} {city} interior design"
-            ) or None
-            beat.col3_image_url = await _search_unsplash(
-                f"{beat.mb_col3_title} {city} craft artisan"
-            ) or None
-        else:
-            # 4 张图并发生成
-            results = await asyncio.gather(
-                _gen(_indigo_beat_prompt(beat, city, district)),
-                _gen(_indigo_mood_prompt(beat, city, district)),
-                _gen(_indigo_col2_prompt(beat, city, district)),
-                _gen(_indigo_col3_prompt(beat, city, district)),
+    targets = [
+        (beat_index, image_field)
+        for image_field in ("image_url", "mood_image_url", "col2_image_url", "col3_image_url")
+        for beat_index, beat in enumerate(story.beats)
+        if not getattr(beat, image_field, None)
+    ]
+    semaphore = asyncio.Semaphore(max(settings.image_job_concurrency, 1))
+
+    async def generate_target(beat_index: int, image_field: str) -> tuple[int, str, str]:
+        async with semaphore:
+            request = IndigoSingleImageRequest(
+                story_unit=story,
+                beat_index=beat_index,
+                image_field=image_field,
             )
-            beat.image_url = results[0]
-            beat.mood_image_url = results[1]
-            beat.col2_image_url = results[2]
-            beat.col3_image_url = results[3]
+            image_url = await generate_indigo_single_image(request)
+            return beat_index, image_field, image_url
+
+    results = await asyncio.gather(
+        *(generate_target(beat_index, image_field) for beat_index, image_field in targets)
+    )
+    for beat_index, image_field, image_url in results:
+        setattr(story.beats[beat_index], image_field, image_url or None)
     return story
 
 
-async def generate_indigo_single_image(req: IndigoSingleImageRequest) -> str:
+async def generate_indigo_single_image(
+    req: IndigoSingleImageRequest,
+    idempotency_key: str | None = None,
+) -> str:
     story = req.story_unit
     if not (0 <= req.beat_index < len(story.beats)):
         raise ValueError(f"invalid beat_index: {req.beat_index}")
@@ -276,4 +276,4 @@ async def generate_indigo_single_image(req: IndigoSingleImageRequest) -> str:
 
     if settings.image_provider == "unsplash":
         return await _search_unsplash(unsplash_query) or ""
-    return await _gen(prompt)
+    return await _gen(prompt, idempotency_key=idempotency_key)

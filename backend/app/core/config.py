@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     relay_image_model: str = "openai/gpt-5.4-image-2"
     auth_db_path: str = "data/indigo.db"
     session_ttl_days: int = 30
+    redis_url: str = ""
+    image_job_concurrency: int = 6
+    image_job_max_retries: int = 3
+    image_job_ttl_seconds: int = 7 * 24 * 60 * 60
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
