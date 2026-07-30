@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { IndigoImageJob } from './api'
 import type { IndigoBeat, IndigoStoryUnit } from './indigo_types'
 import { ImageJobProgress } from './ImageJobProgress'
@@ -10,6 +11,12 @@ const IMAGE_FIELDS = [
 ] as const
 
 const IMAGE_LABELS = ['场景', '氛围', '设计', '在地']
+const WRITING_STEPS = [
+  ['街区语境', '提炼地点与酒店之间的叙事关系'],
+  ['标题方向', '生成 3 组主题标题与副标题'],
+  ['空间触点', '组织 6 个场景及各自故事文字'],
+  ['成片结构', '把文字映射到 22 页 PPTX'],
+] as const
 
 type Props = {
   story: IndigoStoryUnit
@@ -58,6 +65,111 @@ function StageStatus({
   )
 }
 
+function FastStoryReview({ story }: { story: IndigoStoryUnit }) {
+  const [view, setView] = useState<'summary' | 'touchpoints'>('summary')
+
+  return (
+    <section className="mt-8 border-y border-[#2a2a28] py-6">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="font-mono text-[9px] tracking-[0.24em] uppercase text-[#c8a96e]">
+            01 · Story ready
+          </div>
+          <h2 className="mt-2 text-[20px] font-light text-[#f5f5f0]">已生成的故事文字</h2>
+          <p className="mt-2 text-[12px] leading-5 text-[#777770]">
+            {story.taglines.length} 个标题方向 · {story.origins.length} 个源起角度 · {story.beats.length} 个空间触点
+          </p>
+        </div>
+
+        <div className="flex border-b border-[#33332f]" role="tablist" aria-label="故事文字视图">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'summary'}
+            onClick={() => setView('summary')}
+            className={`min-w-[88px] border-b px-2 pb-2 font-mono text-[10px] tracking-[0.12em] transition ${
+              view === 'summary'
+                ? 'border-[#c8a96e] text-[#f5f5f0]'
+                : 'border-transparent text-[#666660] hover:text-[#aaa9a1]'
+            }`}
+          >
+            故事方向
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'touchpoints'}
+            onClick={() => setView('touchpoints')}
+            className={`min-w-[88px] border-b px-2 pb-2 font-mono text-[10px] tracking-[0.12em] transition ${
+              view === 'touchpoints'
+                ? 'border-[#c8a96e] text-[#f5f5f0]'
+                : 'border-transparent text-[#666660] hover:text-[#aaa9a1]'
+            }`}
+          >
+            6 个触点
+          </button>
+        </div>
+      </div>
+
+      {view === 'summary' ? (
+        <div className="mt-7 grid gap-7 md:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+          <div>
+            <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-[#666660]">
+              Story summary
+            </div>
+            <p className="mt-3 max-w-[680px] text-[17px] font-light leading-8 text-[#deded7]">
+              {story.story_summary}
+            </p>
+            <div className="mt-5 border-l border-[#c8a96e]/60 pl-4">
+              {story.concept_poem.map((line, index) => (
+                <p key={index} className="text-[12px] leading-6 text-[#8f8f88]">
+                  {line}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-[#2a2a28] pt-5 md:border-l md:border-t-0 md:pl-7 md:pt-0">
+            <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-[#666660]">
+              Title directions
+            </div>
+            <div className="mt-1">
+              {story.taglines.map((tagline, index) => (
+                <div key={`${tagline.zh}-${index}`} className="grid grid-cols-[30px_1fr] gap-3 border-b border-[#242422] py-4 last:border-b-0">
+                  <span className="font-mono text-[9px] text-[#c8a96e]">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <div>
+                    <div className="text-[15px] text-[#e8e8e2]">{tagline.zh}</div>
+                    <div className="mt-1 text-[11px] leading-5 text-[#777770]">{tagline.sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-7 grid gap-x-7 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+          {story.beats.map((beat) => (
+            <article key={`${beat.num}-${beat.name_zh}`} className="border-t border-[#343430] pt-4">
+              <div className="font-mono text-[9px] tracking-[0.14em] text-[#c8a96e]">
+                {beat.num} · {beat.space_zh}
+              </div>
+              <h3 className="mt-2 text-[15px] text-[#e8e8e2]">{beat.name_zh}</h3>
+              <p className="mt-3 text-[11px] leading-5 text-[#8b8b84]">{beat.narrative}</p>
+              <p className="mt-3 text-[10px] leading-5 text-[#4f9895]">{beat.tagline}</p>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <p className="mt-6 border-t border-[#242422] pt-4 text-[11px] leading-5 text-[#666660]">
+        场景图片将根据这些文字逐张生成；图片完成前也可以切换查看故事方向和空间触点。
+      </p>
+    </section>
+  )
+}
+
 export function FastTextGeneration({ city, district }: { city: string; district: string }) {
   return (
     <div className="min-h-full px-5 py-10 sm:px-8 sm:py-14">
@@ -84,6 +196,21 @@ export function FastTextGeneration({ city, district }: { city: string; district:
           <StageStatus index="01" label="故事文字" value="生成中" state="active" />
           <StageStatus index="02" label="场景图片" value="等待" state="pending" />
           <StageStatus index="03" label="可编辑 PPTX" value="等待" state="pending" />
+        </div>
+
+        <div className="mt-10 grid gap-px border border-[#242422] bg-[#242422] sm:grid-cols-2 lg:grid-cols-4">
+          {WRITING_STEPS.map(([label, description], index) => (
+            <div key={label} className="min-h-[116px] bg-[#141412] p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] tracking-[0.16em] text-[#c8a96e]">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <span className="h-px w-8 bg-[#c8a96e]/45 animate-breathe" />
+              </div>
+              <div className="mt-5 text-[12px] text-[#d2d2cb]">{label}</div>
+              <p className="mt-2 text-[10px] leading-5 text-[#62625d]">{description}</p>
+            </div>
+          ))}
         </div>
 
         <div className="mt-14 grid gap-px overflow-hidden border border-[#242422] bg-[#242422] sm:grid-cols-2 lg:grid-cols-3">
@@ -167,6 +294,8 @@ export function FastGenerationWorkspace({
             state={completed === total ? 'done' : 'pending'}
           />
         </div>
+
+        <FastStoryReview story={story} />
 
         <div className="mt-7">
           {job ? (
