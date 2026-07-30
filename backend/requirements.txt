@@ -7,3 +7,4 @@ openai==1.54.0
 pydantic-settings==2.6.1
 fal-client==0.14.1
 google-genai==0.8.0
+celery[redis]==5.6.3

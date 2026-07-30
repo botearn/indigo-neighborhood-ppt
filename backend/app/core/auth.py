@@ -313,3 +313,21 @@ def get_history(user_id: str, item_id: str) -> dict[str, Any]:
     data = dict(row)
     data["story"] = json.loads(data.pop("story_json"))
     return data
+
+
+def update_history_story(user_id: str, item_id: str, story: Any) -> bool:
+    if hasattr(story, "model_dump"):
+        payload = story.model_dump(mode="json")
+    else:
+        payload = story
+    now = _now()
+    with _connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE generation_history
+            SET story_json = ?, updated_at = ?
+            WHERE user_id = ? AND id = ?
+            """,
+            (json.dumps(payload, ensure_ascii=False), now, user_id, item_id),
+        )
+    return cursor.rowcount > 0

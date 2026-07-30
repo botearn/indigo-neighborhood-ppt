@@ -168,6 +168,8 @@ class IndigoStoryUnit(BaseModel):
     city: str
     district: str
     hotel_en: str               # e.g. "Shanghai Xintiandi"
+    history_id: Optional[str] = None
+    image_job_id: Optional[str] = None
     taglines: list[IndigoTagline] = Field(min_length=3, max_length=3)
     concept_poem: list[str]     # 2 paragraphs for brand concept cinematic
     origins: list[IndigoOrigin] = Field(min_length=3, max_length=3)
@@ -195,3 +197,20 @@ class IndigoSingleImageRequest(BaseModel):
     image_field: str         # image_url | mood_image_url | col2_image_url | col3_image_url
     instruction: Optional[str] = None
     conversation_history: Optional[list[ConversationMessage]] = None
+
+
+class IndigoImageJobRequest(BaseModel):
+    story_unit: IndigoStoryUnit
+    history_id: Optional[str] = None
+
+
+class IndigoImageJobResponse(BaseModel):
+    id: str
+    status: str
+    total: int
+    completed: int
+    failed: int
+    created_at: int
+    updated_at: int
+    story: IndigoStoryUnit
+    errors: dict[str, str] = Field(default_factory=dict)

@@ -1,0 +1,57 @@
+name: Provision Image Job Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type PROVISION to create a billed Redis service and stage REDIS_URL"
+        required: true
+        type: string
+      redis_plan:
+        description: "Upstash Redis plan"
+        required: true
+        default: "pay-as-you-go"
+        type: choice
+        options:
+          - pay-as-you-go
+          - fixed-250mb
+
+concurrency:
+  group: provision-image-jobs
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: inputs.confirmation == 'PROVISION'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure managed Redis exists
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          REDIS_PLAN: ${{ inputs.redis_plan }}
+        run: |
+          if ! flyctl redis list --org personal | awk 'NR > 1 {print $1}' | grep -qx "indigo-ppt-jobs"; then
+            flyctl redis create \
+              --name indigo-ppt-jobs \
+              --org personal \
+              --region sin \
+              --plan "$REDIS_PLAN" \
+              --no-replicas
+          fi
+
+      - name: Stage Redis connection for the backend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          redis_url="$(flyctl redis status indigo-ppt-jobs | sed -n 's/.*Private URL[[:space:]]*=[[:space:]]*//p' | head -n 1)"
+          if [ -z "$redis_url" ]; then
+            echo "Could not read the managed Redis private URL."
+            exit 1
+          fi
+          echo "::add-mask::$redis_url"
+          flyctl secrets set REDIS_URL="$redis_url" --stage --app indigo-ppt-backend
