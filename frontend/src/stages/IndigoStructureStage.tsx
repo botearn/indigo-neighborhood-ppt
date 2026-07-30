@@ -35,8 +35,8 @@ export function IndigoStructureStage({ story, onReorder, onNext, onBack }: Props
           ))}
           <SlideRow index="07" label="情绪" caption={story.emotion_headline} />
           <SlideRow index="08" label="总结" caption={story.story_summary} />
-          <SlideRow index="09" label="Mapping" caption="6 个 hotel touchpoint 故事流线索引" />
-          <SlideRow index="10" label="Flow" caption="故事流线总览" />
+          <SlideRow index="09" label="Mapping" caption="6 个 hotel touchpoint 空间触点索引" />
+          <SlideRow index="10" label="Touchpoints" caption="空间触点总览" />
         </div>
 
         <div className="mt-5 mb-1">

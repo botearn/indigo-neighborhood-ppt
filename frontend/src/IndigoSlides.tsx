@@ -258,7 +258,7 @@ function SlideStoryMapping({ n, s }: { n: number; s: IndigoStoryUnit }) {
     <div style={{ width: W, height: H, background: T.white, position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
       <div style={{ position: 'absolute', top: 40, left: 28, right: 28, display: 'flex', alignItems: 'baseline', gap: 16 }}>
         <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '0.04em', color: T.navy, textTransform: 'uppercase' }}>STORY MAPPING</div>
-        <div style={{ fontSize: 10, color: T.grayM, fontWeight: 300, letterSpacing: '0.05em' }}>故事流线索引</div>
+        <div style={{ fontSize: 10, color: T.grayM, fontWeight: 300, letterSpacing: '0.05em' }}>空间触点索引</div>
       </div>
       <div style={{ position: 'absolute', top: 90, left: 28, right: 28, height: 350, display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 5 }}>
         {s.beats.map((b, i) => (
@@ -280,25 +280,29 @@ function SlideStoryMapping({ n, s }: { n: number; s: IndigoStoryUnit }) {
 function SlideStoryFlowGrid({ n, s }: { n: number; s: IndigoStoryUnit }) {
   return (
     <div style={{ width: W, height: H, background: T.white, position: 'relative', overflow: 'hidden', fontFamily: "'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif" }}>
-      <div style={{ position: 'absolute', top: 40, left: 28, fontSize: 18, fontWeight: 300, color: T.navy, letterSpacing: '0.06em' }}>故事流线</div>
-      <div style={{ position: 'absolute', top: 85, left: 28, right: 28, bottom: 20, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gridTemplateRows: 'repeat(2,1fr)', gap: 1, background: '#f0f0ee' }}>
+      <div style={{ position: 'absolute', top: 22, left: 28, fontSize: 6, fontWeight: 700, color: T.teal, letterSpacing: '0.18em' }}>STORY TOUCHPOINTS</div>
+      <div style={{ position: 'absolute', top: 38, left: 28, fontSize: 18, fontWeight: 300, color: T.navy, letterSpacing: '0.06em' }}>空间触点</div>
+      <div style={{ position: 'absolute', top: 27, right: 28, width: 280, fontSize: 7, color: T.grayM, lineHeight: 1.55, textAlign: 'right' }}>{s.story_summary}</div>
+      <div style={{ position: 'absolute', top: 78, left: 28, right: 28, bottom: 22, display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gridTemplateRows: 'repeat(2,minmax(0,1fr))', columnGap: 14, rowGap: 18 }}>
         {s.beats.map((b, i) => {
           const image = beatImage(s, i, ['image_url', 'mood_image_url', 'col2_image_url', 'col3_image_url'])
           return (
-          <div key={i} style={{ background: T.white, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '86px 1fr', gap: 10, alignItems: 'start', minHeight: 58 }}>
-              {image ? (
-                <img src={image} alt="" style={{ width: 86, height: 58, objectFit: 'cover', borderRadius: 1 }} />
-              ) : (
-                <div style={{ width: 86, height: 58, borderRadius: 1, background: '#ecf0f0' }} />
-              )}
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.navy, lineHeight: 1.3 }}>{b.name_zh}</div>
-                <div style={{ fontSize: 6, textTransform: 'uppercase', letterSpacing: '0.12em', color: T.grayM, marginTop: 4 }}>{b.space_zh}</div>
-              </div>
+          <div key={i} style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {image ? (
+              <img src={image} alt="" style={{ width: '100%', height: 58, objectFit: 'cover' }} />
+            ) : (
+              <div style={{ width: '100%', height: 58, background: '#ecf0f0' }} />
+            )}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6, minWidth: 0 }}>
+              <div style={{ flex: '0 0 auto', fontSize: 6, fontWeight: 700, color: T.teal, letterSpacing: '0.12em' }}>{b.num}</div>
+              <div style={{ minWidth: 0, fontSize: 9, fontWeight: 700, color: T.navy, lineHeight: 1.25 }}>{b.name_zh}</div>
             </div>
-            <div style={{ fontSize: 7, color: T.grayD, lineHeight: 1.8, flex: 1 }}>{b.narrative.slice(0, 50)}…</div>
-            <div style={{ fontSize: 6, color: T.teal, borderTop: '1px solid #f0f0ee', paddingTop: 4, marginTop: 2 }}>{b.tagline}</div>
+            <div style={{ fontSize: 5.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: T.grayM, marginTop: 3 }}>{b.space_zh}</div>
+            <div style={{ fontSize: 6.2, color: T.grayD, lineHeight: 1.55, marginTop: 5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{b.narrative}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 'auto', paddingTop: 5 }}>
+              <div style={{ width: 16, height: 1, background: T.gold, flex: '0 0 auto' }} />
+              <div style={{ minWidth: 0, fontSize: 5.8, color: T.teal, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.tagline}</div>
+            </div>
           </div>
           )
         })}

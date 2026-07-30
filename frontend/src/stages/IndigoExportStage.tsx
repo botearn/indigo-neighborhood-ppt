@@ -50,8 +50,8 @@ export function IndigoExportStage({ story, exporting, exportedAt, onExport, onBa
             ))}
             <SlideItem index="07" label="情绪" caption={story.emotion_headline} />
             <SlideItem index="08" label="总结" caption={story.story_summary} />
-            <SlideItem index="09" label="Mapping" caption="故事流线索引" />
-            <SlideItem index="10" label="Flow" caption="故事流线总览" />
+            <SlideItem index="09" label="Mapping" caption="空间触点索引" />
+            <SlideItem index="10" label="Touchpoints" caption="空间触点总览" />
             {story.beats.flatMap((beat, i) => [
               <SlideItem
                 key={`${beat.num}-cover`}
