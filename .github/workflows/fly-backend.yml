@@ -36,7 +36,7 @@ jobs:
 
       - name: Verify image job Redis is configured
         run: |
-          if ! flyctl secrets list --app indigo-ppt-backend | awk '{print $1}' | grep -qx "REDIS_URL"; then
+          if ! flyctl secrets list --app indigo-ppt-backend | awk '$1 == "REDIS_URL" || $2 == "REDIS_URL" { found=1 } END { exit !found }'; then
             echo "REDIS_URL is missing. Run the Provision Image Job Infrastructure workflow before deploying."
             exit 1
           fi
