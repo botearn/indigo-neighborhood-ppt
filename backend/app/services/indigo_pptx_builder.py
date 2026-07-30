@@ -526,7 +526,7 @@ def _slide_story_mapping(prs, n: int, s: IndigoStoryUnit):
     _set_bg(slide, WHITE)
     _add_text(slide, "STORY MAPPING", Cm(1), Cm(1.3), Cm(12), Cm(1.0),
               size=18, bold=True, color=NAVY, spacing=0.04)
-    _add_text(slide, "故事流线索引", Cm(13.5), Cm(1.7), Cm(6), Cm(0.7),
+    _add_text(slide, "空间触点索引", Cm(13.5), Cm(1.7), Cm(6), Cm(0.7),
               size=9, color=GRAY_M)
     col_w = (SW - Cm(2)) / 6
     colors_bg = [BEAT_BG[b.num] for b in s.beats]
@@ -550,52 +550,46 @@ def _slide_story_mapping(prs, n: int, s: IndigoStoryUnit):
 def _slide_story_flow_grid(prs, n: int, s: IndigoStoryUnit):
     slide = _new_slide(prs)
     _set_bg(slide, WHITE)
-    _add_text(slide, "故事流线", Cm(1), Cm(1.3), Cm(8), Cm(0.9),
+    _add_text(slide, "STORY TOUCHPOINTS", Cm(1), Cm(0.65), Cm(8), Cm(0.45),
+              size=6, bold=True, color=TEAL, spacing=0.18)
+    _add_text(slide, "空间触点", Cm(1), Cm(1.15), Cm(8), Cm(0.9),
               size=17, color=NAVY, spacing=0.06, font="Songti SC")
     _add_text(slide, s.story_summary,
-              Cm(10.5), Cm(1.45), SW - Cm(12), Cm(0.8),
+              Cm(16.4), Cm(0.95), SW - Cm(17.4), Cm(1.15),
               size=7.5, color=GRAY_M, wrap=True, align=PP_ALIGN.RIGHT)
 
-    dot_y = Cm(10.05)
-    first_center = Cm(3.2)
-    last_center = Cm(30.35)
-    _add_rect(slide, first_center, dot_y, last_center - first_center, Cm(0.05),
-              fill=RGBColor(0xCC, 0xDD, 0xDD))
+    margin_x = Cm(1)
+    col_gap = Cm(0.65)
+    row_gap = Cm(0.95)
+    grid_top = Cm(3.15)
+    grid_bottom = SH - Cm(0.9)
+    col_w = (SW - margin_x * 2 - col_gap * 2) / 3
+    row_h = (grid_bottom - grid_top - row_gap) / 2
+    img_h = Cm(3.05)
 
-    img_w = Cm(4.8)
-    img_h = Cm(2.75)
-    x_positions = [Cm(0.8), Cm(6.25), Cm(11.7), Cm(17.15), Cm(22.6), Cm(28.05)]
     for i, beat in enumerate(s.beats):
-        x = x_positions[i]
-        center_x = x + img_w / 2
-        is_top = i % 2 == 0
-        img_y = Cm(3.35) if is_top else Cm(10.85)
-        text_y = Cm(6.35) if is_top else Cm(13.75)
+        col = i % 3
+        row = i // 3
+        x = margin_x + (col_w + col_gap) * col
+        y = grid_top + (row_h + row_gap) * row
         image_url = _beat_image(s, i, "image_url", "mood_image_url", "col2_image_url", "col3_image_url")
-        if is_top:
-            _add_rect(slide, center_x, img_y + img_h, Cm(0.04), dot_y - img_y - img_h,
-                      fill=RGBColor(0xCC, 0xDD, 0xDD))
-        else:
-            _add_rect(slide, center_x, dot_y, Cm(0.04), img_y - dot_y,
-                      fill=RGBColor(0xCC, 0xDD, 0xDD))
-        _add_oval(slide, center_x - Cm(0.16), dot_y - Cm(0.16), Cm(0.32), Cm(0.32),
-                  fill=TEAL if i % 2 == 0 else GOLD, line_color=WHITE, line_width=0.75)
-        _img_placeholder(slide, x, img_y, img_w, img_h,
+        _img_placeholder(slide, x, y, col_w, img_h,
                          bg=RGBColor(0xEC, 0xF0, 0xF0), image_url=image_url)
         _add_text(slide, beat.num,
-                  x, text_y, Cm(1.0), Cm(0.45),
+                  x, y + Cm(3.35), Cm(0.9), Cm(0.45),
                   size=6.5, bold=True, color=TEAL, spacing=0.12)
         _add_text(slide, beat.name_zh,
-                  x + Cm(1.1), text_y - Cm(0.05), img_w - Cm(1.1), Cm(0.65),
-                  size=8.2, bold=True, color=NAVY, font="Songti SC", wrap=True)
+                  x + Cm(1.0), y + Cm(3.25), col_w - Cm(1.0), Cm(0.65),
+                  size=9, bold=True, color=NAVY, font="Songti SC", wrap=True)
         _add_text(slide, beat.space_zh,
-                  x, text_y + Cm(0.72), img_w, Cm(0.5),
+                  x, y + Cm(4.02), col_w, Cm(0.45),
                   size=5.5, color=GRAY_M, spacing=0.08, wrap=True)
-        _add_text(slide, beat.narrative[:42] + "…",
-                  x, text_y + Cm(1.35), img_w + Cm(0.25), Cm(1.45),
-                  size=6.2, color=GRAY_D, wrap=True, line_spacing=10)
+        _add_text(slide, beat.narrative[:58] + "…",
+                  x, y + Cm(4.65), col_w, Cm(1.35),
+                  size=6.2, color=GRAY_D, wrap=True, line_spacing=9.5)
+        _add_rect(slide, x, y + row_h - Cm(0.72), Cm(0.75), Cm(0.035), fill=GOLD)
         _add_text(slide, beat.tagline,
-                  x, text_y + Cm(2.95), img_w, Cm(0.45),
+                  x + Cm(0.95), y + row_h - Cm(0.86), col_w - Cm(0.95), Cm(0.45),
                   size=5.8, color=TEAL, wrap=True)
     _page_num(slide, n, dark=True)
 

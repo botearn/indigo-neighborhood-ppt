@@ -1,4 +1,5 @@
 import base64
+from collections import Counter
 import io
 import sys
 import unittest
@@ -113,12 +114,21 @@ class IndigoPptxImagesTest(unittest.TestCase):
 
         self.assertEqual(len(set(origin_frames)), 3)
 
-    def test_story_flow_uses_staggered_image_route(self) -> None:
+    def test_story_touchpoints_use_flat_equal_grid(self) -> None:
         deck = Presentation(io.BytesIO(build_indigo_pptx(_story())))
-        frames = _picture_frames(deck.slides[9])
+        slide = deck.slides[9]
+        frames = _picture_frames(slide)
+        x_counts = Counter(frame[0] for frame in frames)
+        y_counts = Counter(frame[1] for frame in frames)
+        slide_text = "\n".join(
+            shape.text for shape in slide.shapes if hasattr(shape, "text")
+        )
 
         self.assertEqual(len(frames), 6)
-        self.assertGreaterEqual(len({frame[1] for frame in frames}), 2)
+        self.assertEqual(sorted(x_counts.values()), [2, 2, 2])
+        self.assertEqual(sorted(y_counts.values()), [3, 3])
+        self.assertIn("空间触点", slide_text)
+        self.assertNotIn("故事流线", slide_text)
 
     def test_repeated_remote_image_is_downloaded_once_per_deck(self) -> None:
         story = _story()
