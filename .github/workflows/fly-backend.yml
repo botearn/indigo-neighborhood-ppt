@@ -34,17 +34,35 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      - name: Verify image job Redis is configured
-        run: |
-          if ! flyctl secrets list --app indigo-ppt-backend | awk '$1 == "REDIS_URL" || $2 == "REDIS_URL" { found=1 } END { exit !found }'; then
-            echo "REDIS_URL is missing. Run the Provision Image Job Infrastructure workflow before deploying."
-            exit 1
-          fi
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
       - name: Deploy backend
         working-directory: backend
         run: flyctl deploy --config fly.toml --remote-only --ha=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Retire legacy paid image infrastructure
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_ORG_TOKEN }}
+        run: |
+          mapfile -t worker_ids < <(
+            flyctl machine list --app indigo-ppt-backend --json |
+              jq -r '.[] | select(.config.metadata.fly_process_group == "worker") | .id'
+          )
+          if (( ${#worker_ids[@]} > 0 )); then
+            flyctl machine destroy --force --app indigo-ppt-backend "${worker_ids[@]}"
+          fi
+
+          if flyctl machine list --app indigo-ppt-backend --json |
+            jq -e '.[] | select(.config.metadata.fly_process_group == "worker")' >/dev/null; then
+            echo "The legacy worker could not be removed."
+            exit 1
+          fi
+
+          if flyctl redis list --org personal | awk 'NR > 1 {print $1}' | grep -qx "indigo-ppt-jobs"; then
+            flyctl redis destroy indigo-ppt-jobs --yes
+          fi
+
+          if flyctl secrets list --app indigo-ppt-backend |
+            awk '$1 == "REDIS_URL" || $2 == "REDIS_URL" { found=1 } END { exit !found }'; then
+            flyctl secrets unset REDIS_URL --stage --app indigo-ppt-backend
+          fi

@@ -1,45 +1,26 @@
 import asyncio
+import base64
+import io
 import sys
+import tempfile
+import time
 import unittest
-from collections import defaultdict
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlparse
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
+from PIL import Image  # noqa: E402
 
 from app.api import routes  # noqa: E402
 from app.core import auth  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import image_generator, image_jobs  # noqa: E402
+from app.services import image_assets, image_generator, image_job_runner, image_jobs  # noqa: E402
 from tests.test_indigo_pptx_images import _story  # noqa: E402
-
-
-class FakeRedis:
-    def __init__(self) -> None:
-        self.hashes: dict[str, dict[str, str]] = defaultdict(dict)
-
-    def hset(self, name: str, mapping: dict | None = None, **_kwargs) -> int:
-        values = mapping or {}
-        self.hashes[name].update({str(key): str(value) for key, value in values.items()})
-        return len(values)
-
-    def hgetall(self, name: str) -> dict[str, str]:
-        return dict(self.hashes.get(name, {}))
-
-    def hdel(self, name: str, *keys: str) -> int:
-        removed = 0
-        for key in keys:
-            if key in self.hashes.get(name, {}):
-                del self.hashes[name][key]
-                removed += 1
-        return removed
-
-    def expire(self, _name: str, _ttl: int) -> bool:
-        return True
 
 
 def _blank_story():
@@ -52,7 +33,12 @@ def _blank_story():
 
 class ImageJobStoreTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.store = image_jobs.RedisImageJobStore(FakeRedis())
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "jobs.db"
+        self.store = image_jobs.SqliteImageJobStore(self.db_path)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
 
     def test_job_tracks_partial_results_and_retries_only_failures(self) -> None:
         job = self.store.create(user_id="user-1", story=_blank_story())
@@ -80,6 +66,10 @@ class ImageJobStoreTest(unittest.TestCase):
         self.assertEqual(queued.completed, 1)
         self.assertEqual(queued.failed, 0)
 
+        reopened = image_jobs.SqliteImageJobStore(self.db_path).get(job.id)
+        self.assertEqual(reopened.completed, 1)
+        self.assertEqual(reopened.status, "queued")
+
     def test_existing_images_are_not_enqueued_again(self) -> None:
         story = _blank_story()
         story.beats[0].image_url = "https://images.test/existing.jpg"
@@ -88,6 +78,99 @@ class ImageJobStoreTest(unittest.TestCase):
 
         self.assertEqual(job.completed, 1)
         self.assertEqual(len(self.store.pending_targets(job.id)), 23)
+
+    def test_cancelled_job_rejects_late_image_result(self) -> None:
+        job = self.store.create(user_id="user-1", story=_blank_story())
+        target = self.store.pending_targets(job.id)[0]
+
+        self.store.request_cancel(job.id)
+        recorded = self.store.record_success(
+            job.id,
+            target,
+            "https://images.test/late.jpg",
+        )
+
+        self.assertFalse(recorded)
+        self.assertEqual(self.store.get(job.id).completed, 0)
+
+
+class ImageJobRunnerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.store = image_jobs.SqliteImageJobStore(Path(self.temp_dir.name) / "jobs.db")
+        self.original_media_dir = settings.image_job_media_dir
+        self.original_public_base_url = settings.public_base_url
+        settings.image_job_media_dir = str(Path(self.temp_dir.name) / "images")
+        settings.public_base_url = "https://backend.example.test"
+
+    def tearDown(self) -> None:
+        settings.image_job_media_dir = self.original_media_dir
+        settings.public_base_url = self.original_public_base_url
+        self.temp_dir.cleanup()
+
+    def test_generated_base64_is_persisted_as_a_short_file_url(self) -> None:
+        image = Image.new("RGB", (2000, 1200), (30, 80, 120))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        generated = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode('ascii')}"
+        job = self.store.create(user_id="user-1", story=_blank_story())
+        target = self.store.pending_targets(job.id)[0]
+
+        with (
+            patch.object(image_jobs, "get_image_job_store", return_value=self.store),
+            patch.object(
+                image_generator,
+                "generate_indigo_single_image",
+                new=AsyncMock(return_value=generated),
+            ),
+        ):
+            image_job_runner._run_target(job.id, target)
+
+        updated = self.store.get(job.id)
+        image_url = updated.story.beats[0].image_url
+        self.assertIsNotNone(image_url)
+        self.assertTrue(image_url.startswith("https://backend.example.test/api/indigo/image-assets/"))
+        self.assertLess(len(image_url), 200)
+
+        asset_name = image_url.rsplit("/", 1)[-1]
+        asset_path = image_assets.resolve_image_asset(asset_name)
+        with Image.open(asset_path) as persisted:
+            self.assertLessEqual(persisted.width, 1792)
+            self.assertLessEqual(persisted.height, 1024)
+
+        response = TestClient(app).get(urlparse(image_url).path)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["content-type"], "image/jpeg")
+        self.assertIn("immutable", response.headers["cache-control"])
+
+    def test_running_job_resumes_after_store_reopens(self) -> None:
+        job = self.store.create(user_id="user-1", story=_blank_story())
+        first_target = self.store.pending_targets(job.id)[0]
+        self.store.record_success(job.id, first_target, "https://images.test/existing.jpg")
+        self.store.mark_running(job.id)
+        reopened = image_jobs.SqliteImageJobStore(self.store.db_path)
+
+        with (
+            patch.object(image_jobs, "get_image_job_store", return_value=reopened),
+            patch.object(
+                image_generator,
+                "generate_indigo_single_image",
+                new=AsyncMock(return_value="data:image/png;base64,ignored"),
+            ),
+            patch.object(
+                image_assets,
+                "persist_image",
+                return_value="https://backend.example.test/api/indigo/image-assets/resumed-image.jpg",
+            ),
+        ):
+            image_job_runner.resume_pending_jobs()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and reopened.get(job.id).status != "completed":
+                time.sleep(0.02)
+
+        resumed = reopened.get(job.id)
+        self.assertEqual(resumed.status, "completed")
+        self.assertEqual(resumed.completed, 24)
 
 
 class IndigoImageConcurrencyTest(unittest.TestCase):
@@ -127,8 +210,13 @@ class IndigoImageConcurrencyTest(unittest.TestCase):
 
 class ImageJobApiTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        auth.init_auth_store()
         self.client = TestClient(app)
-        self.store = image_jobs.RedisImageJobStore(FakeRedis())
+        self.store = image_jobs.SqliteImageJobStore(Path(self.temp_dir.name) / "jobs.db")
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
 
     def _register(self) -> tuple[str, str]:
         email = f"image-job-{uuid4().hex}@example.com"
@@ -144,18 +232,16 @@ class ImageJobApiTest(unittest.TestCase):
         _user_id, token = self._register()
         _other_user_id, other_token = self._register()
 
-        def fake_enqueue(job_id: str, targets: list[str]) -> list[str]:
-            task_ids = [f"task-{index}" for index, _target in enumerate(targets)]
-            self.store.set_task_ids(job_id, task_ids)
-            return task_ids
+        def fake_enqueue(_job_id: str, targets: list[str]) -> list[str]:
+            return targets
 
         def fake_revoke(job_id: str) -> None:
             self.store.request_cancel(job_id)
 
         with (
             patch.object(routes.image_jobs, "get_image_job_store", return_value=self.store),
-            patch.object(routes.worker, "enqueue_image_job", side_effect=fake_enqueue),
-            patch.object(routes.worker, "revoke_image_job", side_effect=fake_revoke),
+            patch.object(routes.image_job_runner, "enqueue_image_job", side_effect=fake_enqueue),
+            patch.object(routes.image_job_runner, "revoke_image_job", side_effect=fake_revoke),
         ):
             created = self.client.post(
                 "/api/indigo/image-jobs",
@@ -196,14 +282,12 @@ class ImageJobApiTest(unittest.TestCase):
             story=story,
         )
 
-        def fake_enqueue(job_id: str, targets: list[str]) -> list[str]:
-            task_ids = [f"task-{index}" for index, _target in enumerate(targets)]
-            self.store.set_task_ids(job_id, task_ids)
-            return task_ids
+        def fake_enqueue(_job_id: str, targets: list[str]) -> list[str]:
+            return targets
 
         with (
             patch.object(routes.image_jobs, "get_image_job_store", return_value=self.store),
-            patch.object(routes.worker, "enqueue_image_job", side_effect=fake_enqueue),
+            patch.object(routes.image_job_runner, "enqueue_image_job", side_effect=fake_enqueue),
         ):
             created = self.client.post(
                 "/api/indigo/image-jobs",
@@ -218,6 +302,45 @@ class ImageJobApiTest(unittest.TestCase):
         job_id = created.json()["id"]
         saved = auth.get_history(user_id, history["id"])
         self.assertEqual(saved["story"]["image_job_id"], job_id)
+
+    def test_job_completes_asynchronously_without_external_queue(self) -> None:
+        _user_id, token = self._register()
+
+        with (
+            patch.object(image_jobs, "get_image_job_store", return_value=self.store),
+            patch.object(
+                image_generator,
+                "generate_indigo_single_image",
+                new=AsyncMock(return_value="data:image/png;base64,ignored"),
+            ),
+            patch.object(
+                image_assets,
+                "persist_image",
+                return_value="https://backend.example.test/api/indigo/image-assets/test-image.jpg",
+            ),
+        ):
+            created = self.client.post(
+                "/api/indigo/image-jobs",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"story_unit": _blank_story().model_dump(mode="json")},
+            )
+            self.assertEqual(created.status_code, 202, created.text)
+            job_id = created.json()["id"]
+
+            deadline = time.monotonic() + 3
+            latest = created
+            while time.monotonic() < deadline:
+                latest = self.client.get(
+                    f"/api/indigo/image-jobs/{job_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                self.assertEqual(latest.status_code, 200, latest.text)
+                if latest.json()["status"] == "completed":
+                    break
+                time.sleep(0.02)
+
+        self.assertEqual(latest.json()["status"], "completed")
+        self.assertEqual(latest.json()["completed"], 24)
 
     def test_fast_text_creates_fast_history_without_waiting_for_images(self) -> None:
         user_id, token = self._register()
