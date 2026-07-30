@@ -6,12 +6,13 @@ primary_region = "sin"
 
 [processes]
   app = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
-  worker = "celery -A app.worker:celery_app worker --loglevel=INFO --concurrency=6 -Q image_batch"
 
 [env]
   ENV = "production"
   PORT = "8000"
   AUTH_DB_PATH = "/data/indigo.db"
+  IMAGE_JOB_MEDIA_DIR = "/data/image-jobs"
+  PUBLIC_BASE_URL = "https://indigo-ppt-backend.fly.dev"
   CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://indigo-neighborhood-ppt.vercel.app"
 
 [[mounts]]

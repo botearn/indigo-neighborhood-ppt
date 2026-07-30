@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.auth import init_auth_store
@@ -7,9 +9,19 @@ from app.api.routes import router
 from app.api.github_webhook import router as github_router
 from app.api.render_webhook import router as render_router
 from app.api.feishu_event import router as feishu_router
+from app.services import image_job_runner, image_jobs
 
-app = FastAPI(title="Indigo Neighborhood PPT API")
 init_auth_store()
+image_jobs.get_image_job_store()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    image_job_runner.resume_pending_jobs()
+    yield
+
+
+app = FastAPI(title="Indigo Neighborhood PPT API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
