@@ -4,6 +4,7 @@ node_modules.bak-*/
 .frontend-node_modules.bak-*/
 __pycache__/
 *.pyc
+.venv/
 .env
 .env.local
 dist/

@@ -2,6 +2,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ValidationError
+from starlette.concurrency import run_in_threadpool
 from app.core import auth
 from app.core.auth import AuthUser, require_user
 from app.core.models import (
@@ -95,7 +96,7 @@ async def indigo_images_single(req: IndigoSingleImageRequest, user: AuthUser = D
 @router.post("/indigo/export-pptx")
 async def indigo_export_pptx(story: IndigoStoryUnit, user: AuthUser = Depends(require_user)):
     try:
-        data = indigo_pptx_builder.build_indigo_pptx(story)
+        data = await run_in_threadpool(indigo_pptx_builder.build_indigo_pptx, story)
         filename = f"{story.district}_{story.city}.pptx"
         encoded = quote(filename)
         return Response(

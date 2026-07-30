@@ -3,6 +3,7 @@ import io
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -118,6 +119,27 @@ class IndigoPptxImagesTest(unittest.TestCase):
 
         self.assertEqual(len(frames), 6)
         self.assertGreaterEqual(len({frame[1] for frame in frames}), 2)
+
+    def test_repeated_remote_image_is_downloaded_once_per_deck(self) -> None:
+        story = _story()
+        image_url = "https://images.example.test/shared.png"
+        for beat in story.beats:
+            beat.image_url = image_url
+            beat.mood_image_url = image_url
+            beat.col2_image_url = image_url
+            beat.col3_image_url = image_url
+
+        image = Image.new("RGB", (1600, 900), (40, 80, 120))
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        response = Mock(content=buf.getvalue())
+        response.raise_for_status.return_value = None
+
+        with patch("httpx.get", return_value=response) as get_image:
+            deck = Presentation(io.BytesIO(build_indigo_pptx(story)))
+
+        self.assertEqual(len(deck.slides), 22)
+        self.assertEqual(get_image.call_count, 1)
 
 
 if __name__ == "__main__":
