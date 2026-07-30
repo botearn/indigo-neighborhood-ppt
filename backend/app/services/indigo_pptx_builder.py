@@ -170,7 +170,6 @@ def _hbar(slide, city: str, district: str):
         "HOTELINDIGO",
         f"HOTEL INDIGO {city.upper()} {district.upper()}  |  STORYLINE STRATEGIC DEVELOPMENT",
         f"英迪格酒店 · {city}{district}  |  2026",
-        "VOCUIS BRANDING & DESIGN",
     ]
     for i, label in enumerate(labels):
         _add_text(slide, label,
