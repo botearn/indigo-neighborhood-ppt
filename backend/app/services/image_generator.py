@@ -18,6 +18,20 @@ VERB_KEYWORDS = {
 }
 
 
+def image_error_message(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        if status_code in {401, 403}:
+            return "图片服务认证失败，请检查服务端凭据"
+        if status_code == 429:
+            return "图片服务请求过多，请稍后重试"
+        if status_code >= 500:
+            return "图片服务暂时不可用，请稍后重试"
+    if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
+        return "图片服务连接超时，请稍后重试"
+    return str(exc) or exc.__class__.__name__
+
+
 def _mood_prompt(story: StoryUnit) -> str:
     return (
         f"{story.signature.en}, {story.neighborhood}, {story.city}, "

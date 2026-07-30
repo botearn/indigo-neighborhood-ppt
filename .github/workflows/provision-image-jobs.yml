@@ -41,6 +41,7 @@ jobs:
               --org personal \
               --region sin \
               --plan "$REDIS_PLAN" \
+              --disable-eviction \
               --no-replicas
           fi
 

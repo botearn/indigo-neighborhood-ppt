@@ -1,5 +1,6 @@
 import type { IndigoStoryUnit } from '../indigo_types'
-import type { IndigoImageField, IndigoImageTarget } from '../api'
+import type { IndigoImageField, IndigoImageJob, IndigoImageTarget } from '../api'
+import { ImageJobProgress } from '../ImageJobProgress'
 
 const IMAGE_FIELDS: { field: IndigoImageField; label: string }[] = [
   { field: 'image_url', label: '主图' },
@@ -11,9 +12,16 @@ const IMAGE_FIELDS: { field: IndigoImageField; label: string }[] = [
 type Props = {
   story: IndigoStoryUnit
   loading: boolean
+  job: IndigoImageJob | null
+  jobError: string
+  jobActionBusy: boolean
   selected: IndigoImageTarget | null
   regenerating: IndigoImageTarget | null
   onSelect: (target: IndigoImageTarget | null) => void
+  onStart: () => void
+  onCancel: () => void
+  onRetry: () => void
+  onRestart: () => void
   onNext: () => void
   onBack: () => void
 }
@@ -31,13 +39,23 @@ export function indigoImageTargetLabel(story: IndigoStoryUnit, target: IndigoIma
 export function IndigoImageStage({
   story,
   loading,
+  job,
+  jobError,
+  jobActionBusy,
   selected,
   regenerating,
   onSelect,
+  onStart,
+  onCancel,
+  onRetry,
+  onRestart,
   onNext,
   onBack,
 }: Props) {
   const hasImages = story.beats.some(beat => IMAGE_FIELDS.some(({ field }) => !!beat[field]))
+  const hasAllImages = story.beats.every(
+    beat => IMAGE_FIELDS.every(({ field }) => !!beat[field]),
+  )
 
   return (
     <div className="h-full overflow-y-auto">
@@ -53,6 +71,33 @@ export function IndigoImageStage({
             {story.city} · {story.district} · 6 beats × 4 images
           </p>
         </div>
+
+        {job ? (
+          <div className="mb-8">
+            <ImageJobProgress
+              job={job}
+              error={jobError}
+              actionBusy={jobActionBusy}
+              onCancel={onCancel}
+              onRetry={onRetry}
+              onRestart={onRestart}
+            />
+          </div>
+        ) : !hasAllImages ? (
+          <section className="mb-8 border-y border-[#2a2a28] bg-[#141412] px-5 py-4 flex items-center justify-between gap-5">
+            <p className={`text-xs ${jobError ? 'text-red-400' : 'text-[#8b8b84]'}`}>
+              {jobError || '图片任务尚未开始'}
+            </p>
+            <button
+              type="button"
+              onClick={onStart}
+              disabled={jobActionBusy}
+              className="shrink-0 font-mono text-[10px] tracking-[0.16em] uppercase text-[#c8a96e] disabled:opacity-40"
+            >
+              开始生成
+            </button>
+          </section>
+        ) : null}
 
         {loading && !hasImages ? (
           <div className="grid grid-cols-2 gap-4">
@@ -118,7 +163,7 @@ export function IndigoImageStage({
           </button>
           <button
             onClick={onNext}
-            disabled={loading}
+            disabled={loading || !hasAllImages}
             className="font-mono text-[11px] tracking-[0.2em] uppercase px-5 py-2.5 rounded bg-[#c8a96e] text-[#0f0f0f] hover:bg-[#d4ba82] cursor-pointer transition disabled:opacity-30 disabled:cursor-not-allowed"
           >
             下一步 · 结构

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { IndigoStoryUnit } from './indigo_types'
 import {
-  generateIndigo,
+  generateIndigoFastText,
   exportIndigoPpt,
   getHistoryItem,
   listHistory,
@@ -9,8 +9,21 @@ import {
 } from './api'
 import { IndigoPreview } from './IndigoSlides'
 import { BackButton } from './BackButton'
+import {
+  FastDeckReady,
+  FastGenerationWorkspace,
+  FastTextGeneration,
+} from './FastGenerationWorkspace'
+import { useIndigoImageJob } from './useIndigoImageJob'
+import { clearFastState, loadFastState, saveFastState } from './session'
 
 type Phase = 'idle' | 'generating' | 'preview' | 'exporting'
+
+function hasAllImages(story: IndigoStoryUnit | null): boolean {
+  return !!story && story.beats.every(
+    beat => !!beat.image_url && !!beat.mood_image_url && !!beat.col2_image_url && !!beat.col3_image_url,
+  )
+}
 
 function isIndigoStory(value: unknown): value is IndigoStoryUnit {
   if (!value || typeof value !== 'object') return false
@@ -34,28 +47,91 @@ export function FastLane({
   initialStory?: IndigoStoryUnit | null
   onHistoryChanged?: () => void
 }) {
-  const [city, setCity] = useState('')
-  const [district, setDistrict] = useState('')
-  const [phase, setPhase] = useState<Phase>(initialStory ? 'preview' : 'idle')
+  const [recovery] = useState(() => loadFastState())
+  const [city, setCity] = useState(initialStory?.city ?? recovery?.city ?? '')
+  const [district, setDistrict] = useState(initialStory?.district ?? recovery?.district ?? '')
+  const [phase, setPhase] = useState<Phase>(initialStory || recovery ? 'generating' : 'idle')
   const [story, setStory] = useState<IndigoStoryUnit | null>(initialStory)
   const [error, setError] = useState('')
   const [history, setHistory] = useState<GenerationHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [openingHistoryId, setOpeningHistoryId] = useState<string | null>(null)
+  const mainRef = useRef<HTMLElement>(null)
+  const {
+    job: imageJob,
+    error: imageJobError,
+    actionBusy: imageJobActionBusy,
+    active: imageJobActive,
+    start: startImageJob,
+    resume: resumeImageJob,
+    retry: retryImageJob,
+    cancel: cancelImageJob,
+    clear: clearImageJob,
+  } = useIndigoImageJob()
+  const imagesComplete = hasAllImages(story)
 
   useEffect(() => {
     if (!initialStory) return
+    clearImageJob()
     setStory(initialStory)
     setCity(initialStory.city)
     setDistrict(initialStory.district)
     setPhase('preview')
     setError('')
-  }, [initialStory])
+    requestAnimationFrame(() => mainRef.current?.scrollTo({ top: 0 }))
+  }, [clearImageJob, initialStory])
+
+  useEffect(() => {
+    if (!story?.image_job_id || imagesComplete) return
+    if (imageJob?.id === story.image_job_id) return
+    void resumeImageJob(story.image_job_id).catch(() => undefined)
+  }, [imageJob?.id, imagesComplete, resumeImageJob, story?.image_job_id])
+
+  useEffect(() => {
+    if (!imageJob) return
+    setStory(imageJob.story)
+  }, [imageJob])
+
+  useEffect(() => {
+    if (!imageJob || imageJob.status === 'queued' || imageJob.status === 'running') return
+    onHistoryChanged?.()
+    void refreshHistory()
+    // Refresh callbacks do not participate in image job state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageJob?.id, imageJob?.status])
 
   useEffect(() => {
     void refreshHistory()
   }, [])
+
+  useEffect(() => {
+    const historyId = recovery?.history_id
+    if (initialStory || !historyId) return
+    const recoverableHistoryId = historyId
+    async function restoreFromHistory() {
+      try {
+        const detail = await getHistoryItem(recoverableHistoryId)
+        if (detail.mode !== 'fast' || !isIndigoStory(detail.story)) {
+          throw new Error('这条历史记录不能恢复为一键 Indigo deck。')
+        }
+        setStory(detail.story)
+        setCity(detail.story.city)
+        setDistrict(detail.story.district)
+        setPhase('preview')
+        requestAnimationFrame(() => mainRef.current?.scrollTo({ top: 0 }))
+      } catch (cause) {
+        clearFastState()
+        setError(cause instanceof Error ? cause.message : '一键任务恢复失败')
+        setPhase('idle')
+      }
+    }
+    void restoreFromHistory()
+  }, [initialStory, recovery])
+
+  useEffect(() => {
+    if (story) saveFastState(story)
+  }, [story])
 
   async function refreshHistory() {
     setHistoryLoading(true)
@@ -75,12 +151,19 @@ export function FastLane({
     if (!c || !d) return
     setError('')
     setPhase('generating')
+    clearImageJob()
     try {
-      const result = await generateIndigo(c, d)
+      const result = await generateIndigoFastText(c, d)
       setStory(result)
       setPhase('preview')
+      requestAnimationFrame(() => mainRef.current?.scrollTo({ top: 0 }))
       onHistoryChanged?.()
       void refreshHistory()
+      try {
+        await startImageJob(result)
+      } catch (imageError) {
+        setError(imageError instanceof Error ? imageError.message : '图片任务创建失败')
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '生成失败，请重试')
       setPhase('idle')
@@ -88,7 +171,7 @@ export function FastLane({
   }
 
   async function handleExport() {
-    if (!story) return
+    if (!story || imageJobActive || !imagesComplete) return
     setPhase('exporting')
     try {
       await exportIndigoPpt(story)
@@ -99,7 +182,16 @@ export function FastLane({
     }
   }
 
-  function handleReset() {
+  async function handleReset() {
+    if (imageJobActive) {
+      try {
+        await cancelImageJob()
+      } catch {
+        // Reset the local view even if the cancellation request cannot be delivered.
+      }
+    }
+    clearImageJob()
+    clearFastState()
     setStory(null)
     setCity('')
     setDistrict('')
@@ -132,38 +224,41 @@ export function FastLane({
   return (
     <div className="h-screen flex flex-col bg-[#0f0f0f]">
       {/* Header */}
-      <header className="h-16 px-6 flex items-center justify-between border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="min-h-16 px-3 py-2 sm:px-6 flex items-center justify-between gap-2 border-b border-[#1e1e1c] bg-[#0f0f0f]/95 backdrop-blur-sm shrink-0">
+        <div className="min-w-0 flex items-center gap-2 sm:gap-3">
           <BackButton
             onClick={onBack}
             disabled={phase === 'generating' || phase === 'exporting'}
           />
-          <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">Hotel Indigo</span>
-          <span className="text-[15px] font-light text-[#f5f5f0]/85">一键生成</span>
+          <span className="hidden sm:inline font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280]">Hotel Indigo</span>
+          <span className="text-[13px] sm:text-[15px] font-light text-[#f5f5f0]/85 whitespace-nowrap">一键生成</span>
           {story && phase === 'preview' && (
-            <span className="text-[12px] text-[#6b7280]">· {story.city} {story.district} · 22 页</span>
+            <span className="hidden md:inline truncate text-[12px] text-[#6b7280]">· {story.city} {story.district} · 22 页</span>
           )}
         </div>
         {phase === 'preview' && (
-          <div className="flex items-center gap-3">
+          <div className="shrink-0 flex items-center gap-2 sm:gap-3">
             <button
-              onClick={handleReset}
-              className="font-mono text-[11px] tracking-wider text-[#6b7280] hover:text-[#a8a8a0] transition"
+              onClick={() => void handleReset()}
+              disabled={imageJobActionBusy}
+              className="hidden sm:inline font-mono text-[11px] tracking-wider text-[#6b7280] hover:text-[#a8a8a0] transition disabled:opacity-40"
             >
               重新生成
             </button>
             <button
               onClick={handleExport}
-              className="bg-[#c8a96e] hover:bg-[#d4b87a] text-[#0f0f0f] font-mono text-[11px] tracking-[0.2em] uppercase px-5 py-2 rounded transition"
+              disabled={imageJobActive || !imagesComplete}
+              className="bg-[#c8a96e] hover:bg-[#d4b87a] disabled:opacity-30 disabled:cursor-not-allowed text-[#0f0f0f] font-mono text-[10px] sm:text-[11px] tracking-[0.14em] sm:tracking-[0.2em] uppercase px-3 sm:px-5 py-2 rounded transition"
             >
-              导出 PPTX
+              <span className="sm:hidden">导出</span>
+              <span className="hidden sm:inline">导出 PPTX</span>
             </button>
           </div>
         )}
       </header>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto">
+      <main ref={mainRef} className="flex-1 overflow-y-auto">
 
         {/* Idle: input form */}
         {phase === 'idle' && (
@@ -174,7 +269,7 @@ export function FastLane({
                   <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#c8a96e] mb-3">FAST LANE</div>
                   <h1 className="text-[26px] font-light text-[#f5f5f0] leading-tight">输入地点，直接出片</h1>
                   <p className="text-sm text-[#6b7280] mt-2 leading-relaxed">
-                    自动生成 22 页 Hotel Indigo 故事线 PPT，约 30 秒
+                    文字先完成，场景图片随后逐张生成，最终导出 22 页可编辑 PPTX。
                   </p>
                 </div>
                 <div className="flex flex-col gap-3">
@@ -265,21 +360,23 @@ export function FastLane({
         )}
 
         {/* Generating */}
-        {(phase === 'generating' || phase === 'exporting') && (
+        {phase === 'generating' && (
+          <FastTextGeneration city={city} district={district} />
+        )}
+
+        {phase === 'exporting' && (
           <div className="flex items-center justify-center min-h-full">
             <div className="flex flex-col items-center gap-8 text-center">
               <div className="w-10 h-10 border-2 border-[#c8a96e]/30 border-t-[#c8a96e] rounded-full animate-spin" />
               <div>
                 <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#c8a96e] mb-2">
-                  {phase === 'generating' ? '生成中' : '导出中'}
+                  导出中
                 </div>
                 <div className="text-[#f5f5f0] text-[17px] font-light">
-                  {phase === 'generating'
-                    ? `正在为「${city} · ${district}」生成 22 页故事线…`
-                    : '正在生成可编辑 PPTX…'}
+                  正在生成可编辑 PPTX…
                 </div>
                 <div className="text-[#6b7280] text-xs mt-2">
-                  {phase === 'generating' ? 'Taglines · Origins · 6 Beats · Moodboards' : '22 页 · 约 20 秒'}
+                  22 页 · 图片与版式正在写入
                 </div>
               </div>
             </div>
@@ -294,7 +391,23 @@ export function FastLane({
                 {error}
               </div>
             )}
-            <IndigoPreview story={story} />
+            {imagesComplete ? (
+              <>
+                <FastDeckReady story={story} />
+                <IndigoPreview story={story} />
+              </>
+            ) : (
+              <FastGenerationWorkspace
+                story={story}
+                job={imageJob}
+                error={imageJobError}
+                actionBusy={imageJobActionBusy}
+                onStart={() => void startImageJob(story)}
+                onCancel={() => void cancelImageJob()}
+                onRetry={() => void retryImageJob()}
+                onRestart={() => void startImageJob(imageJob?.story ?? story)}
+              />
+            )}
           </>
         )}
       </main>

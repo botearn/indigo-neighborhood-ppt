@@ -34,6 +34,15 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      - name: Verify image job Redis is configured
+        run: |
+          if ! flyctl secrets list --app indigo-ppt-backend | awk '{print $1}' | grep -qx "REDIS_URL"; then
+            echo "REDIS_URL is missing. Run the Provision Image Job Infrastructure workflow before deploying."
+            exit 1
+          fi
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - name: Deploy backend
         working-directory: backend
         run: flyctl deploy --config fly.toml --remote-only --ha=false

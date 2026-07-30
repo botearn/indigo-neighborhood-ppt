@@ -35,6 +35,8 @@ export interface IndigoStoryUnit {
   city: string
   district: string
   hotel_en: string
+  history_id?: string | null
+  image_job_id?: string | null
   taglines: IndigoTagline[]
   concept_poem: string[]
   origins: IndigoOrigin[]
