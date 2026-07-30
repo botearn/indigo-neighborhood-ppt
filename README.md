@@ -165,7 +165,7 @@ Frontend:
 
 See [docs/fly-deployment.md](docs/fly-deployment.md) for the deployment checklist, environment variables, and validation commands. The old `render.yaml` is kept only as legacy Render configuration.
 
-Indigo image generation supports recoverable Redis/Celery Jobs in both one-step and guided flows. See [docs/image-generation-jobs.md](docs/image-generation-jobs.md) for the API, reliability model, opt-in infrastructure workflow, and remaining storage/observability work.
+Indigo image generation supports recoverable, zero-additional-infrastructure Jobs in both one-step and guided flows. Job state and compressed image files reuse the existing Fly SQLite volume; Redis and a separate worker are not required. See [docs/image-generation-jobs.md](docs/image-generation-jobs.md) for the API, recovery model, sleep behavior, and remaining storage/observability work.
 
 ---
 

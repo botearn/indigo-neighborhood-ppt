@@ -10,6 +10,7 @@ import {
 import type { IndigoStoryUnit } from './indigo_types'
 
 const POLL_INTERVAL_MS = 1200
+const MAX_CONSECUTIVE_POLL_FAILURES = 5
 
 export function isImageJobActive(job: IndigoImageJob | null): boolean {
   return job?.status === 'queued' || job?.status === 'running'
@@ -49,13 +50,22 @@ export function useIndigoImageJob() {
       }
     } catch (cause) {
       if (runId !== runRef.current) return
-      setError(cause instanceof Error ? cause.message : '图片任务连接失败')
-      if (!(cause instanceof ApiError && cause.status === 404)) {
+      const message = cause instanceof Error ? cause.message : '图片任务连接失败'
+      const nextFailedPolls = failedPolls + 1
+      if (
+        !(cause instanceof ApiError && cause.status === 404) &&
+        nextFailedPolls < MAX_CONSECUTIVE_POLL_FAILURES
+      ) {
+        setError(message)
         const delay = Math.min(POLL_INTERVAL_MS * 2 ** failedPolls, 10_000)
         timerRef.current = setTimeout(
-          () => void pollJob(jobId, runId, failedPolls + 1),
+          () => void pollJob(jobId, runId, nextFailedPolls),
           delay,
         )
+      } else if (cause instanceof ApiError && cause.status === 404) {
+        setError(message)
+      } else {
+        setError(`${message}。已暂停自动重试，请刷新页面继续`)
       }
     }
   }, [])

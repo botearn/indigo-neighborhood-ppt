@@ -1,99 +1,86 @@
 # 图片生成 Job 架构
 
-## 目标
+## 目标与成本边界
 
-Indigo 一套 deck 需要 6 个 beat × 4 张图片。图片生成不再依赖一个长时间 HTTP
-请求，而是拆成可查询、可取消、可局部重试的后台任务。
+Indigo 一套 deck 需要 6 个 beat × 4 张图片。图片生成使用可查询、可取消、可局部
+重试的异步 Job，但 demo 阶段不新增 Redis、独立 worker 或对象存储费用。
+
+任务复用已有资源：
+
+- Fly FastAPI `app` 进程内的固定大小线程池执行图片任务。
+- 已有 `/data/indigo.db` SQLite 保存 Job、结果和错误状态。
+- 已有 `indigo_data` Volume 的 `/data/image-jobs` 保存压缩 JPEG。
+
+这里的“零新增基础设施”只表示异步能力不再增加 Redis、独立 worker 或对象存储账单。
+图片模型调用、现有 Fly `app` 和既有 Volume 仍按原有套餐与用量计费。
 
 ## 请求流程
 
-1. 客户端调用 `POST /api/indigo/image-jobs`，服务端创建 Job 并返回 HTTP 202。
-2. FastAPI 将缺失图片拆成独立 Celery task，写入 Redis 队列。
-3. Fly `worker` process group 以固定并发执行图片任务。
-4. 每张图片完成后，worker 将 URL 或错误写回 Redis。
+1. 客户端调用 `POST /api/indigo/image-jobs`，服务端持久化 Job 并返回 HTTP 202。
+2. FastAPI 将缺失图片提交到进程内线程池，主图优先。
+3. 每张图片生成后被压缩为 JPEG，并原子写入 `/data/image-jobs`。
+4. SQLite 只保存短图片 URL、状态和错误，不保存 provider base64。
 5. 一键与逐步前端查询 `GET /api/indigo/image-jobs/{job_id}`，逐张更新当前 story。
 6. Job 完成后，FastAPI 将最终 story 幂等同步到对应用户历史。
 
-主图任务排在 Mood、设计灵感和空间细节之前，因此两条前端流程都会优先展示六张主图。
-
 创建 Job 时，返回的 story 会写入 `image_job_id`。关联历史也立即保存这个 ID，因此
-用户关闭或刷新页面后仍能从历史记录恢复正在执行的任务。
+用户关闭或刷新页面后仍能恢复任务。
 
 ## API
 
-### 创建
-
 ```http
 POST /api/indigo/image-jobs
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "story_unit": {},
-  "history_id": "optional-history-id"
-}
-```
-
-响应为 HTTP 202，状态可能是 `queued`、`running`、`completed` 或 `partial`。
-
-### 查询
-
-```http
 GET /api/indigo/image-jobs/{job_id}
-Authorization: Bearer <token>
-```
-
-Job 严格按用户隔离。响应包含 `total`、`completed`、`failed`、当前 `story` 和单图
-错误映射。
-
-### 失败重试与取消
-
-```http
 POST /api/indigo/image-jobs/{job_id}/retry
 DELETE /api/indigo/image-jobs/{job_id}
+GET /api/indigo/image-assets/{opaque-name}.jpg
 ```
 
-重试只提交失败目标；取消不会强制杀死正在执行的 provider 请求，但会撤销尚未开始的
-Celery task，并拒绝写入晚到结果。
+除使用不可猜测文件名的图片读取接口外，Job 接口都要求 Bearer token，并按用户隔离。
+响应包含 `total`、`completed`、`failed`、当前 `story` 和单图错误映射。
 
 ## 可靠性约束
 
-- Redis 是 Job 状态和 task result 的权威存储，默认保留 7 天。
-- Celery 使用 late acknowledgement、worker-lost reject 和单任务预取。
+- SQLite 使用 WAL、独立连接和 busy timeout 支持 Web 请求与生成线程并发。
 - Relay 请求携带稳定 `Idempotency-Key`。
 - `429`、网络错误和 `5xx` 使用指数退避重试，默认最多 3 次。
-- 旧 `/api/indigo/images` 接口继续可用，并改为可配置的有界并发。
-- 当前 SQLite Volume 只挂载给 `app` process；worker 不直接访问 SQLite。
+- 取消不会强杀正在执行的 provider 请求，但拒绝写入晚到结果。
+- 应用启动时将残留 `running` Job 恢复为 `queued` 并继续缺失目标。
+- 前端连续 5 次轮询失败后暂停自动重试，避免异常接口被无限请求。
+- 旧 `/api/indigo/images` 同步接口继续可用，并使用有界并发。
+
+## 休眠行为
+
+Fly `app` 保持原有自动休眠配置。用户生成期间的轮询流量会保持机器活跃；如果用户关闭
+页面并触发 Fly 休眠，任务会暂停。用户再次打开页面后，机器启动并从 SQLite 恢复任务。
+
+这个行为保留了异步和刷新恢复能力，也避免为了 demo 支付常驻 worker 费用。它不承诺
+无人访问时仍持续执行；需要这种保证时，应重新评估托管队列和 worker 的成本。
 
 ## 自动化部署
 
-本次交付包含 Job API、worker、一键/逐步渐进前端和旧同步接口的有界并发兼容路径。
-付费 Redis 和 worker 不会被普通 push 自动创建。
+`Deploy Backend to Fly.io` Workflow 会：
 
-启用异步 Job 前需要：
+1. 确认已有 `indigo_data` Volume。
+2. 自动部署只包含 `app` process 的版本。
+3. 确认旧 `worker` 机器已被移除。
+4. 自动销毁旧 `indigo-ppt-jobs` Upstash Redis，并暂存删除 `REDIS_URL`。
 
-1. 确认 Redis 和 Fly worker 的费用。
-2. 在 GitHub Actions 手动运行 `Provision Image Job Infrastructure`。
-3. 输入 `PROVISION`，选择 Redis plan。
-4. Workflow 自动创建 Redis，并将 `REDIS_URL` 以 staged secret 写入 Fly。
-5. `backend/fly.toml` 已定义独立 Celery `worker` process group。
-6. 合并功能 PR，由 `Deploy Backend to Fly.io` 自动部署 Web + Worker。
-
-禁止在服务器上手动创建、配置或启动 worker。部署和运行时配置必须经上述 Workflow。
+所有生产变更都由 GitHub Actions 执行，不手工修改服务器运行状态。
 
 ## 本地验证
 
-本地完整链路需要三个进程：
+本地只需要 FastAPI，不再需要 Redis 或 Celery：
 
 ```bash
-redis-server --port 6380 --save '' --appendonly no
-cd backend && REDIS_URL=redis://127.0.0.1:6380/0 .venv/bin/celery -A app.worker:celery_app worker --loglevel=INFO --concurrency=6 -Q image_batch
-cd backend && REDIS_URL=redis://127.0.0.1:6380/0 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+cd backend
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-修改 `.env` 中的图片供应商凭据后需要重启 Web 和 worker，运行中的进程不会自动重新加载环境变量。
+默认 Job 数据写入 `data/indigo.db`，图片写入 `data/image-jobs`。
 
 ## 后续工作
 
-- 图片写入 Tigris/S3，避免 provider 临时 URL 或 base64 长期进入历史。
-- 增加队列等待、单图延迟、429、重试次数、成功率和成本指标。
+- 为历史图片增加容量统计、删除和保留策略。
+- 当单机容量或无人值守执行成为真实需求时，再评估 Tigris/S3 与托管队列。
+- 增加队列等待、单图延迟、429、重试次数、成功率和 provider 成本指标。

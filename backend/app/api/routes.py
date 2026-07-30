@@ -1,6 +1,6 @@
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
 from app.core import auth
@@ -22,14 +22,15 @@ from app.core.models import (
 )
 from app.services import (
     generator,
+    image_assets,
     image_generator,
+    image_job_runner,
     image_jobs,
     indigo_generator,
     indigo_pptx_builder,
     locator,
     ppt_builder,
 )
-from app import worker
 
 
 class ExportRequest(BaseModel):
@@ -170,7 +171,7 @@ async def indigo_image_job_create(
             history_id=history_id,
         )
         targets = await run_in_threadpool(store.pending_targets, job.id)
-        await run_in_threadpool(worker.enqueue_image_job, job.id, targets)
+        await run_in_threadpool(image_job_runner.enqueue_image_job, job.id, targets)
         if history_id:
             await run_in_threadpool(
                 auth.update_history_story,
@@ -205,7 +206,7 @@ async def indigo_image_job_retry(job_id: str, user: AuthUser = Depends(require_u
     targets = await run_in_threadpool(store.prepare_retry, job_id)
     if targets:
         try:
-            await run_in_threadpool(worker.enqueue_image_job, job_id, targets)
+            await run_in_threadpool(image_job_runner.enqueue_image_job, job_id, targets)
         except Exception as e:
             await run_in_threadpool(store.mark_dispatch_failed, job_id, str(e))
             raise HTTPException(status_code=503, detail="Image retry could not be queued")
@@ -215,8 +216,21 @@ async def indigo_image_job_retry(job_id: str, user: AuthUser = Depends(require_u
 @router.delete("/indigo/image-jobs/{job_id}", response_model=IndigoImageJobResponse)
 async def indigo_image_job_cancel(job_id: str, user: AuthUser = Depends(require_user)):
     store = await _owned_image_job(job_id, user)
-    await run_in_threadpool(worker.revoke_image_job, job_id)
+    await run_in_threadpool(image_job_runner.revoke_image_job, job_id)
     return await _image_job_response(store, job_id, user)
+
+
+@router.get("/indigo/image-assets/{asset_name}")
+async def indigo_image_asset(asset_name: str):
+    try:
+        path = await run_in_threadpool(image_assets.resolve_image_asset, asset_name)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
 
 
 @router.post("/indigo/images/single", response_model=SingleImageResponse)
