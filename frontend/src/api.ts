@@ -43,6 +43,25 @@ export type AuthResponse = {
 
 export type IndigoImageField = 'image_url' | 'mood_image_url' | 'col2_image_url' | 'col3_image_url'
 export type IndigoImageTarget = { beatIndex: number; field: IndigoImageField }
+export type IndigoImageJobStatus =
+  | 'queued'
+  | 'running'
+  | 'partial'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type IndigoImageJob = {
+  id: string
+  status: IndigoImageJobStatus
+  total: number
+  completed: number
+  failed: number
+  created_at: number
+  updated_at: number
+  story: IndigoStoryUnit
+  errors: Record<string, string>
+}
 
 export type GenerationHistoryItem = {
   id: string
@@ -310,6 +329,20 @@ export async function generateIndigoText(
   return res.json()
 }
 
+export async function generateIndigoFastText(
+  city: string,
+  district: string,
+  hotelEn?: string,
+): Promise<IndigoStoryUnit> {
+  const res = await apiFetch('/indigo/generate-fast-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ city, district, hotel_en: hotelEn }),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
 export async function editIndigo(
   storyUnit: IndigoStoryUnit,
   instruction: string,
@@ -333,6 +366,41 @@ export async function generateIndigoImages(storyUnit: IndigoStoryUnit): Promise<
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(storyUnit),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function createIndigoImageJob(storyUnit: IndigoStoryUnit): Promise<IndigoImageJob> {
+  const res = await apiFetch('/indigo/image-jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      story_unit: storyUnit,
+      history_id: storyUnit.history_id,
+    }),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function getIndigoImageJob(jobId: string): Promise<IndigoImageJob> {
+  const res = await apiFetch(`/indigo/image-jobs/${encodeURIComponent(jobId)}`)
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function retryIndigoImageJob(jobId: string): Promise<IndigoImageJob> {
+  const res = await apiFetch(`/indigo/image-jobs/${encodeURIComponent(jobId)}/retry`, {
+    method: 'POST',
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function cancelIndigoImageJob(jobId: string): Promise<IndigoImageJob> {
+  const res = await apiFetch(`/indigo/image-jobs/${encodeURIComponent(jobId)}`, {
+    method: 'DELETE',
   })
   await ensureOk(res)
   return res.json()

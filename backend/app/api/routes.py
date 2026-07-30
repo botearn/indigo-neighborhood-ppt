@@ -58,7 +58,7 @@ async def indigo_generate(req: IndigoGenerateRequest, user: AuthUser = Depends(r
         return story
     except Exception as e:
         import traceback; traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=image_generator.image_error_message(e))
 
 
 @router.post("/indigo/generate-text", response_model=IndigoStoryUnit)
@@ -68,6 +68,26 @@ async def indigo_generate_text(req: IndigoGenerateRequest, user: AuthUser = Depe
         history = auth.create_history(
             user_id=user.id,
             mode="guided",
+            city=story.city,
+            district=story.district,
+            title=f"{story.city} {story.district}",
+            story=story,
+        )
+        story.history_id = history["id"]
+        auth.update_history_story(user.id, history["id"], story)
+        return story
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/generate-fast-text", response_model=IndigoStoryUnit)
+async def indigo_generate_fast_text(req: IndigoGenerateRequest, user: AuthUser = Depends(require_user)):
+    try:
+        story = await indigo_generator.generate_indigo(req)
+        history = auth.create_history(
+            user_id=user.id,
+            mode="fast",
             city=story.city,
             district=story.district,
             title=f"{story.city} {story.district}",
@@ -94,7 +114,7 @@ async def indigo_images(story: IndigoStoryUnit, user: AuthUser = Depends(require
     try:
         return await image_generator.generate_indigo_images(story)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=image_generator.image_error_message(e))
 
 
 async def _owned_image_job(job_id: str, user: AuthUser):
@@ -207,7 +227,7 @@ async def indigo_images_single(req: IndigoSingleImageRequest, user: AuthUser = D
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=image_generator.image_error_message(e))
 
 
 @router.post("/indigo/export-pptx")

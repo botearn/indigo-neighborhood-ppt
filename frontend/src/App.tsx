@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   locate,
   generateIndigoText,
   editIndigo,
-  generateIndigoImages,
   regenerateIndigoImage,
   exportIndigoPpt,
   getAuthToken,
@@ -25,10 +24,11 @@ import { IndigoTextStage } from './stages/IndigoTextStage'
 import { IndigoImageStage, indigoImageTargetLabel } from './stages/IndigoImageStage'
 import { IndigoStructureStage } from './stages/IndigoStructureStage'
 import { IndigoExportStage } from './stages/IndigoExportStage'
-import { loadState, saveState, clearState } from './session'
+import { clearFastState, clearState, loadFastState, loadState, saveState } from './session'
 import { FastLane } from './FastLane'
 import { AuthScreen } from './AuthScreen'
 import { Dashboard } from './Dashboard'
+import { useIndigoImageJob } from './useIndigoImageJob'
 
 const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
   { num: 1, label: '选址', sublabel: 'Pick a neighborhood' },
@@ -66,13 +66,23 @@ function isIndigoStory(value: unknown): value is IndigoStoryUnit {
   )
 }
 
+const persistedFastRecovery = loadFastState()
+const hasGuidedRecovery = !!persisted && (
+  persisted.step > 1 ||
+  persisted.candidate !== null ||
+  persisted.story !== null ||
+  persisted.messages.length > 0
+)
+
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [history, setHistory] = useState<GenerationHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
-  const [appMode, setAppMode] = useState<AppMode>('home')
+  const [appMode, setAppMode] = useState<AppMode>(
+    persistedFastRecovery ? 'fast' : hasGuidedRecovery ? 'guided' : 'home',
+  )
   const [fastInitialStory, setFastInitialStory] = useState<IndigoStoryUnit | null>(null)
   const [openingHistoryId, setOpeningHistoryId] = useState<string | null>(null)
   const [step, setStep] = useState(persisted?.step ?? 1)
@@ -86,13 +96,26 @@ export default function App() {
   const [generating, setGenerating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [searching, setSearching] = useState(false)
-  const [imagingPics, setImagingPics] = useState(false)
+  const [startingImages, setStartingImages] = useState(false)
   const [selectedImage, setSelectedImage] = useState<IndigoImageTarget | null>(null)
   const [regeneratingImage, setRegeneratingImage] = useState<IndigoImageTarget | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportedAt, setExportedAt] = useState<number | null>(null)
   const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
   const [error, setError] = useState('')
+  const terminalImageNoticeRef = useRef('')
+  const {
+    job: imageJob,
+    error: imageJobError,
+    actionBusy: imageJobActionBusy,
+    active: imageJobActive,
+    start: startImageJob,
+    resume: resumeImageJob,
+    retry: retryImageJob,
+    cancel: cancelImageJob,
+    clear: clearImageJob,
+  } = useIndigoImageJob()
+  const imagingPics = startingImages || imageJobActive
 
   async function refreshHistory() {
     if (!getAuthToken()) {
@@ -134,19 +157,57 @@ export default function App() {
       setUser(null)
       setHistory([])
       setFastInitialStory(null)
+      clearFastState()
       setAppMode('home')
       setStory(null)
       setCandidate(null)
       setMessages([])
       setError('')
+      clearImageJob()
       clearState()
     })
-  }, [])
+  }, [clearImageJob])
 
   useEffect(() => {
     if (!user) return
     saveState({ step, candidate, story, messages })
   }, [step, candidate, story, messages, user])
+
+  useEffect(() => {
+    if (!imageJob) return
+    setStory(imageJob.story)
+  }, [imageJob])
+
+  useEffect(() => {
+    if (!story?.image_job_id || hasIndigoImages(story)) return
+    if (imageJob?.id === story.image_job_id) return
+    void resumeImageJob(story.image_job_id).catch(() => undefined)
+    // Resume is keyed by the persisted job id, not by each story image update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageJob?.id, story?.image_job_id])
+
+  useEffect(() => {
+    if (!imageJob || imageJob.status === 'queued' || imageJob.status === 'running') return
+    const noticeKey = `${imageJob.id}:${imageJob.status}:${imageJob.completed}:${imageJob.failed}`
+    if (terminalImageNoticeRef.current === noticeKey) return
+    terminalImageNoticeRef.current = noticeKey
+
+    const content =
+      imageJob.status === 'completed'
+        ? '图都到了。每个 touchpoint 的主图、Mood、设计灵感和空间细节都可以单独换。'
+        : imageJob.status === 'cancelled'
+          ? `图片任务已取消，已保留 ${imageJob.completed} 张图片。`
+          : `图片完成 ${imageJob.completed} 张，${imageJob.failed} 张需要重试。`
+    setMessages(prev => [...prev, {
+      role: 'agent',
+      content,
+      timestamp: now(),
+      step: 3,
+    }])
+    void refreshHistory()
+    // History refresh is a side effect of a terminal job transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageJob?.completed, imageJob?.failed, imageJob?.id, imageJob?.status])
 
   useEffect(() => {
     if (wasStuckMidGenerate) {
@@ -177,37 +238,32 @@ export default function App() {
   }
 
   async function triggerImageGen(s: IndigoStoryUnit) {
-    setImagingPics(true)
+    setStartingImages(true)
     pushMessage({
       role: 'agent',
-      content: '正在为这套 22 页 Indigo deck 生成图片：6 个 beat，每个 4 张。约 30 到 60 秒。',
+      content: '开始生成这套 Indigo 图片。',
       timestamp: now(),
       step: 3,
     })
     try {
-      const updated = await generateIndigoImages(s)
-      setStory(updated)
-      pushMessage({
-        role: 'agent',
-        content: '图都到了。每个 touchpoint 的主图、mood、设计灵感、空间细节都可以单独换。',
-        timestamp: now(),
-        step: 3,
-      })
+      const created = await startImageJob(s)
+      setStory(created.story)
     } catch (e) {
       pushMessage({
         role: 'agent',
-        content: `生图失败：${e instanceof Error ? e.message : 'unknown'}`,
+        content: `图片任务没有启动：${e instanceof Error ? e.message : 'unknown'}`,
         timestamp: now(),
         step: 3,
       })
     } finally {
-      setImagingPics(false)
+      setStartingImages(false)
     }
   }
 
   useEffect(() => {
     if (step !== 3 || !story || imagingPics) return
     if (hasIndigoImages(story)) return
+    if (story.image_job_id) return
     void triggerImageGen(story)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
@@ -466,6 +522,7 @@ export default function App() {
 
   function handleJump(target: number) {
     if (target === 1) {
+      clearImageJob()
       setStep(1)
       setStory(null)
       setCandidate(null)
@@ -478,8 +535,10 @@ export default function App() {
   }
 
   function handleGoHome() {
+    clearImageJob()
     setAppMode('home')
     setFastInitialStory(null)
+    clearFastState()
     setStep(1)
     setStory(null)
     setCandidate(null)
@@ -495,6 +554,8 @@ export default function App() {
   }
 
   function handleStartGuided() {
+    clearImageJob()
+    clearFastState()
     setStep(1)
     setStory(null)
     setCandidate(null)
@@ -513,10 +574,12 @@ export default function App() {
     setUser(null)
     setHistory([])
     setFastInitialStory(null)
+    clearFastState()
     setAppMode('home')
     setStory(null)
     setCandidate(null)
     setMessages([])
+    clearImageJob()
     clearState()
   }
 
@@ -535,7 +598,7 @@ export default function App() {
         return
       }
       setStory(detail.story)
-      setStep(4)
+      setStep(hasIndigoImages(detail.story) ? 4 : 3)
       setMessages([{
         role: 'agent',
         content: `已打开历史记录：${detail.title}`,
@@ -626,6 +689,7 @@ export default function App() {
         onHistoryChanged={() => void refreshHistory()}
         onBack={() => {
           setFastInitialStory(null)
+          clearFastState()
           setAppMode('home')
           void refreshHistory()
         }}
@@ -669,9 +733,16 @@ export default function App() {
             <IndigoImageStage
               story={story}
               loading={imagingPics}
+              job={imageJob}
+              jobError={imageJobError}
+              jobActionBusy={imageJobActionBusy}
               selected={selectedImage}
               regenerating={regeneratingImage}
               onSelect={setSelectedImage}
+              onStart={() => void startImageJob(story)}
+              onCancel={() => void cancelImageJob()}
+              onRetry={() => void retryImageJob()}
+              onRestart={() => void startImageJob(imageJob?.story ?? story)}
               onNext={() => setStep(4)}
               onBack={() => setStep(2)}
             />

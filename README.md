@@ -165,7 +165,7 @@ Frontend:
 
 See [docs/fly-deployment.md](docs/fly-deployment.md) for the deployment checklist, environment variables, and validation commands. The old `render.yaml` is kept only as legacy Render configuration.
 
-The backend supports a Redis/Celery Job design for long-running Indigo image generation. See [docs/image-generation-jobs.md](docs/image-generation-jobs.md) for the API, reliability model, opt-in infrastructure workflow, and remaining frontend/storage work.
+Indigo image generation supports recoverable Redis/Celery Jobs in both one-step and guided flows. See [docs/image-generation-jobs.md](docs/image-generation-jobs.md) for the API, reliability model, opt-in infrastructure workflow, and remaining storage/observability work.
 
 ---
 

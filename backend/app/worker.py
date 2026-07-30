@@ -67,7 +67,7 @@ def generate_image_task(self, job_id: str, key: str) -> dict[str, str]:
         if _retryable(exc) and self.request.retries < settings.image_job_max_retries:
             countdown = min(2 ** self.request.retries, 30) + random.uniform(0, 1)
             raise self.retry(exc=exc, countdown=countdown)
-        store.record_failure(job_id, key, str(exc) or exc.__class__.__name__)
+        store.record_failure(job_id, key, image_generator.image_error_message(exc))
         return {"target": key, "status": "failed"}
 
     if store.is_cancel_requested(job_id):

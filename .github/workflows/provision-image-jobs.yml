@@ -10,11 +10,11 @@ on:
       redis_plan:
         description: "Upstash Redis plan"
         required: true
-        default: "pay-as-you-go"
+        default: "Pay-as-you-go"
         type: choice
         options:
-          - pay-as-you-go
-          - fixed-250mb
+          - Pay-as-you-go
+          - Fixed 250MB
 
 concurrency:
   group: provision-image-jobs
@@ -32,7 +32,7 @@ jobs:
 
       - name: Ensure managed Redis exists
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_ORG_TOKEN }}
           REDIS_PLAN: ${{ inputs.redis_plan }}
         run: |
           if ! flyctl redis list --org personal | awk 'NR > 1 {print $1}' | grep -qx "indigo-ppt-jobs"; then
@@ -41,15 +41,25 @@ jobs:
               --org personal \
               --region sin \
               --plan "$REDIS_PLAN" \
+              --disable-eviction \
+              --enable-auto-upgrade=false \
+              --enable-prodpack=false \
               --no-replicas
           fi
 
       - name: Stage Redis connection for the backend
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_ORG_TOKEN }}
         run: |
-          redis_url="$(flyctl redis status indigo-ppt-jobs | sed -n 's/.*Private URL[[:space:]]*=[[:space:]]*//p' | head -n 1)"
-          if [ -z "$redis_url" ]; then
+          redis_url="$(
+            flyctl redis status indigo-ppt-jobs |
+              awk -F '│' '/Private URL/ {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
+                print $2
+                exit
+              }'
+          )"
+          if [[ "$redis_url" != redis://* ]]; then
             echo "Could not read the managed Redis private URL."
             exit 1
           fi

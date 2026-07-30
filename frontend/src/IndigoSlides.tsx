@@ -4,6 +4,7 @@
  *
  * Rendered off-screen at full size; FastLane scales them for preview.
  */
+import { useEffect, useRef, useState } from 'react'
 import type { IndigoStoryUnit, IndigoBeat } from './indigo_types'
 
 // ── Design tokens ────────────────────────────────────────────────────────
@@ -466,18 +467,33 @@ export function IndigoSlides({
 // ── Visible scrollable preview ────────────────────────────────────────────
 export function IndigoPreview({ story }: { story: IndigoStoryUnit }) {
   const slides = buildSlideNodes(story)
-  // Scale to fit ~860px column
-  const scale = Math.min(860 / W, 1)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [previewWidth, setPreviewWidth] = useState(() =>
+    Math.min(860, Math.max(window.innerWidth - 24, 240)),
+  )
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const updateWidth = () => setPreviewWidth(Math.min(container.clientWidth, 860))
+    updateWidth()
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [])
+
+  const scale = Math.min(previewWidth / W, 1)
   const scaledH = H * scale
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '32px 24px' }}>
-      {slides.map((slide, i) => (
-        <div key={i} style={{ width: W * scale, height: scaledH, overflow: 'hidden', flexShrink: 0, borderRadius: 2, boxShadow: '0 4px 24px rgba(0,0,0,.5)' }}>
-          <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: W, height: H }}>
-            {slide}
+    <div style={{ padding: '32px clamp(12px, 4vw, 24px)' }}>
+      <div ref={containerRef} style={{ display: 'flex', width: '100%', maxWidth: 860, margin: '0 auto', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        {slides.map((slide, i) => (
+          <div key={i} style={{ width: W * scale, height: scaledH, overflow: 'hidden', flexShrink: 0, borderRadius: 2, boxShadow: '0 4px 24px rgba(0,0,0,.5)' }}>
+            <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: W, height: H }}>
+              {slide}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

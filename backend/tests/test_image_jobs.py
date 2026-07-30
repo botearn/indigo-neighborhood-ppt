@@ -3,7 +3,7 @@ import sys
 import unittest
 from collections import defaultdict
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -218,6 +218,50 @@ class ImageJobApiTest(unittest.TestCase):
         job_id = created.json()["id"]
         saved = auth.get_history(user_id, history["id"])
         self.assertEqual(saved["story"]["image_job_id"], job_id)
+
+    def test_fast_text_creates_fast_history_without_waiting_for_images(self) -> None:
+        user_id, token = self._register()
+        story = _blank_story()
+
+        with (
+            patch.object(
+                routes.indigo_generator,
+                "generate_indigo",
+                new=AsyncMock(return_value=story),
+            ),
+            patch.object(
+                routes.image_generator,
+                "generate_indigo_images",
+                new=AsyncMock(),
+            ) as generate_images,
+        ):
+            response = self.client.post(
+                "/api/indigo/generate-fast-text",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"city": story.city, "district": story.district},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertTrue(payload["history_id"])
+        self.assertIsNone(payload["image_job_id"])
+        generate_images.assert_not_awaited()
+        history = auth.get_history(user_id, payload["history_id"])
+        self.assertEqual(history["mode"], "fast")
+
+    def test_provider_auth_error_is_user_friendly(self) -> None:
+        request = image_generator.httpx.Request("POST", "https://images.test/generate")
+        response = image_generator.httpx.Response(401, request=request)
+        error = image_generator.httpx.HTTPStatusError(
+            "raw provider response",
+            request=request,
+            response=response,
+        )
+
+        self.assertEqual(
+            image_generator.image_error_message(error),
+            "图片服务认证失败，请检查服务端凭据",
+        )
 
 
 if __name__ == "__main__":
