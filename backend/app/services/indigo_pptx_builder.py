@@ -4,6 +4,8 @@ All text elements are real text boxes (not screenshots), fonts and colors are
 applied programmatically. Image areas are placeholder shapes.
 """
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import ContextVar
 from io import BytesIO
 from pptx import Presentation
 from pptx.util import Cm, Pt, Emu
@@ -15,6 +17,15 @@ from pptx.oxml.ns import qn
 from lxml import etree
 
 from app.core.models import IndigoStoryUnit, IndigoBeat
+
+_IMAGE_RAW_CACHE: ContextVar[dict[str, bytes | None] | None] = ContextVar(
+    "indigo_pptx_image_raw_cache",
+    default=None,
+)
+_IMAGE_JPEG_CACHE: ContextVar[dict[tuple[str, float], bytes | None] | None] = ContextVar(
+    "indigo_pptx_image_jpeg_cache",
+    default=None,
+)
 
 # ── Slide dimensions (widescreen 16:9) ───────────────────────────────────
 SW = Cm(33.867)
@@ -231,32 +242,77 @@ def _center_crop_to_ratio(img, target_ratio: float):
     return img.crop((0, top, width, top + new_height))
 
 
+def _load_raw_image(url: str) -> bytes | None:
+    if url.startswith("data:"):
+        _, payload = url.split(",", 1)
+        return base64.b64decode(payload)
+    if url.startswith("http"):
+        import httpx
+        response = httpx.get(url, timeout=10, follow_redirects=True)
+        response.raise_for_status()
+        return response.content
+    return None
+
+
+def _story_image_urls(story: IndigoStoryUnit) -> list[str]:
+    urls = (
+        getattr(beat, field, None)
+        for beat in story.beats
+        for field in ("image_url", "mood_image_url", "col2_image_url", "col3_image_url")
+    )
+    return list(dict.fromkeys(url for url in urls if url))
+
+
+def _prefetch_story_images(story: IndigoStoryUnit, cache: dict[str, bytes | None]) -> None:
+    urls = _story_image_urls(story)
+    if not urls:
+        return
+
+    worker_count = min(8, len(urls))
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="pptx-image") as executor:
+        future_urls = {executor.submit(_load_raw_image, url): url for url in urls}
+        for future in as_completed(future_urls):
+            url = future_urls[future]
+            try:
+                cache[url] = future.result()
+            except Exception:
+                cache[url] = None
+
+
 def _resolve_image(url: str, frame_width: Emu | None = None, frame_height: Emu | None = None) -> BytesIO | None:
     """Turn a data:…;base64 URL or http(s) URL into a JPEG BytesIO for python-pptx."""
     if not url:
         return None
+    raw_cache = _IMAGE_RAW_CACHE.get()
+    jpeg_cache = _IMAGE_JPEG_CACHE.get()
+    target_ratio = round(float(frame_width) / float(frame_height), 4) if frame_width and frame_height else 0.0
+    jpeg_cache_key = (url, target_ratio)
     try:
-        raw: bytes | None = None
-        if url.startswith("data:"):
-            _, payload = url.split(",", 1)
-            raw = base64.b64decode(payload)
-        elif url.startswith("http"):
-            import httpx
-            r = httpx.get(url, timeout=30, follow_redirects=True)
-            r.raise_for_status()
-            raw = r.content
+        if jpeg_cache is not None and jpeg_cache_key in jpeg_cache:
+            cached_jpeg = jpeg_cache[jpeg_cache_key]
+            return BytesIO(cached_jpeg) if cached_jpeg else None
+
+        if raw_cache is not None and url in raw_cache:
+            raw = raw_cache[url]
+        else:
+            raw = _load_raw_image(url)
+            if raw_cache is not None:
+                raw_cache[url] = raw
         if raw:
             from PIL import Image, ImageOps
             img = Image.open(BytesIO(raw))
             img = ImageOps.exif_transpose(img)
             if frame_width and frame_height:
-                img = _center_crop_to_ratio(img, float(frame_width) / float(frame_height))
+                img = _center_crop_to_ratio(img, target_ratio)
             buf = BytesIO()
             img.convert("RGB").save(buf, format="JPEG", quality=85)
-            buf.seek(0)
-            return buf
+            jpeg = buf.getvalue()
+            if jpeg_cache is not None:
+                jpeg_cache[jpeg_cache_key] = jpeg
+            return BytesIO(jpeg)
     except Exception:
-        pass
+        if jpeg_cache is not None:
+            jpeg_cache[jpeg_cache_key] = None
     return None
 
 
@@ -673,31 +729,41 @@ def _slide_moodboard(prs, n: int, beat: IndigoBeat, s: IndigoStoryUnit):
 # ── Main builder ──────────────────────────────────────────────────────────
 
 def build_indigo_pptx(story: IndigoStoryUnit) -> bytes:
-    prs = Presentation()
-    prs.slide_width = SW
-    prs.slide_height = SH
+    image_cache: dict[str, bytes | None] = {}
+    jpeg_cache: dict[tuple[str, float], bytes | None] = {}
+    raw_cache_token = _IMAGE_RAW_CACHE.set(image_cache)
+    jpeg_cache_token = _IMAGE_JPEG_CACHE.set(jpeg_cache)
+    try:
+        _prefetch_story_images(story, image_cache)
 
-    _slide01_cover(prs, story)
-    _slide02_taglines(prs, story)
-    _slide_cinematic(prs, 3, story,
-                     BG_DARK,
-                     story.taglines[0].zh + "  ·  " + story.taglines[0].sub,
-                     story.concept_poem, "STORYLINE CONCEPT",
-                     _beat_image(story, 1, "mood_image_url", "image_url", "col2_image_url", "col3_image_url"))
-    for i in range(3):
-        _slide_origin(prs, 4 + i, story, i)
-    _slide_cinematic(prs, 7, story,
-                     RGBColor(0x0E, 0x16, 0x10),
-                     story.emotion_headline,
-                     story.emotion_poem, "STORY EMOTION",
-                     _beat_image(story, 3, "mood_image_url", "image_url", "col2_image_url", "col3_image_url"))
-    _slide_story_summary(prs, 8, story)
-    _slide_story_mapping(prs, 9, story)
-    _slide_story_flow_grid(prs, 10, story)
-    for i, beat in enumerate(story.beats):
-        _slide_beat_cover(prs, 11 + i * 2, beat)
-        _slide_moodboard(prs, 12 + i * 2, beat, story)
+        prs = Presentation()
+        prs.slide_width = SW
+        prs.slide_height = SH
 
-    buf = BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
+        _slide01_cover(prs, story)
+        _slide02_taglines(prs, story)
+        _slide_cinematic(prs, 3, story,
+                         BG_DARK,
+                         story.taglines[0].zh + "  ·  " + story.taglines[0].sub,
+                         story.concept_poem, "STORYLINE CONCEPT",
+                         _beat_image(story, 1, "mood_image_url", "image_url", "col2_image_url", "col3_image_url"))
+        for i in range(3):
+            _slide_origin(prs, 4 + i, story, i)
+        _slide_cinematic(prs, 7, story,
+                         RGBColor(0x0E, 0x16, 0x10),
+                         story.emotion_headline,
+                         story.emotion_poem, "STORY EMOTION",
+                         _beat_image(story, 3, "mood_image_url", "image_url", "col2_image_url", "col3_image_url"))
+        _slide_story_summary(prs, 8, story)
+        _slide_story_mapping(prs, 9, story)
+        _slide_story_flow_grid(prs, 10, story)
+        for i, beat in enumerate(story.beats):
+            _slide_beat_cover(prs, 11 + i * 2, beat)
+            _slide_moodboard(prs, 12 + i * 2, beat, story)
+
+        buf = BytesIO()
+        prs.save(buf)
+        return buf.getvalue()
+    finally:
+        _IMAGE_JPEG_CACHE.reset(jpeg_cache_token)
+        _IMAGE_RAW_CACHE.reset(raw_cache_token)
