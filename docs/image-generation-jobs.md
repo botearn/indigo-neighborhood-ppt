@@ -63,7 +63,7 @@ Celery task，并拒绝写入晚到结果。
 - Relay 请求携带稳定 `Idempotency-Key`。
 - `429`、网络错误和 `5xx` 使用指数退避重试，默认最多 3 次。
 - 旧 `/api/indigo/images` 接口继续可用，并改为可配置的有界并发。
-- 当前 SQLite Volume 只挂载给 `web` process；worker 不直接访问 SQLite。
+- 当前 SQLite Volume 只挂载给 `app` process；worker 不直接访问 SQLite。
 
 ## 自动化部署
 
