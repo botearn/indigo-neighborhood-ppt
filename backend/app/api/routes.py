@@ -23,6 +23,7 @@ from app.core.models import (
 from app.services import (
     generator,
     image_assets,
+    image_archive,
     image_generator,
     image_job_runner,
     image_jobs,
@@ -257,6 +258,27 @@ async def indigo_export_pptx(story: IndigoStoryUnit, user: AuthUser = Depends(re
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/export-images")
+async def indigo_export_images(story: IndigoStoryUnit, user: AuthUser = Depends(require_user)):
+    try:
+        data = await run_in_threadpool(image_archive.build_indigo_image_archive, story)
+        filename = f"{story.district}_{story.city}_24_images.zip"
+        encoded = quote(filename)
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": (
+                    f"attachment; filename=\"indigo-images.zip\"; filename*=UTF-8''{encoded}"
+                )
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"图片打包失败：{e}")
 
 
 @router.post("/locate", response_model=LocateResponse)

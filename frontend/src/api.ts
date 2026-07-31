@@ -444,6 +444,22 @@ export async function exportIndigoPpt(story: IndigoStoryUnit): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
+export async function exportIndigoImages(story: IndigoStoryUnit): Promise<void> {
+  const res = await apiFetch('/indigo/export-images', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(story),
+  })
+  await ensureOk(res)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${story.district}_${story.city}_24_images.zip`
+  a.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 export async function exportPpt(storyUnit: StoryUnit, slideDataUrls: string[]): Promise<void> {
   const res = await apiFetch('/export', {
     method: 'POST',

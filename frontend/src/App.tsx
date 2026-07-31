@@ -4,6 +4,7 @@ import {
   generateIndigoText,
   editIndigo,
   regenerateIndigoImage,
+  exportIndigoImages,
   exportIndigoPpt,
   getAuthToken,
   getCurrentUser,
@@ -99,6 +100,7 @@ export default function App() {
   const [startingImages, setStartingImages] = useState(false)
   const [selectedImage, setSelectedImage] = useState<IndigoImageTarget | null>(null)
   const [regeneratingImage, setRegeneratingImage] = useState<IndigoImageTarget | null>(null)
+  const [downloadingImages, setDownloadingImages] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportedAt, setExportedAt] = useState<number | null>(null)
   const [messages, setMessages] = useState<ConciergeMessage[]>(persisted?.messages ?? [])
@@ -511,6 +513,32 @@ export default function App() {
     }
   }
 
+  async function handleDownloadImages() {
+    if (!story) return
+    setDownloadingImages(true)
+    setError('')
+    try {
+      await exportIndigoImages(story)
+      pushMessage({
+        role: 'agent',
+        content: '24 张原图已经整理成 ZIP 下载。',
+        timestamp: now(),
+        step: 3,
+      })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '图片下载失败'
+      setError(message)
+      pushMessage({
+        role: 'agent',
+        content: `图片下载失败：${message}`,
+        timestamp: now(),
+        step: 3,
+      })
+    } finally {
+      setDownloadingImages(false)
+    }
+  }
+
   function reorderBeat(fromIndex: number, toIndex: number) {
     if (!story) return
     if (toIndex < 0 || toIndex >= story.beats.length) return
@@ -743,6 +771,8 @@ export default function App() {
               onCancel={() => void cancelImageJob()}
               onRetry={() => void retryImageJob()}
               onRestart={() => void startImageJob(imageJob?.story ?? story)}
+              downloading={downloadingImages}
+              onDownload={() => void handleDownloadImages()}
               onNext={() => setStep(4)}
               onBack={() => setStep(2)}
             />

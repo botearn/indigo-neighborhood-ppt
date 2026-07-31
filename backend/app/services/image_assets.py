@@ -41,6 +41,18 @@ def _image_bytes(image_url: str) -> bytes:
     return response.content
 
 
+def load_image_bytes(image_url: str) -> bytes:
+    asset_path = urlparse(image_url).path
+    if "/api/indigo/image-assets/" in asset_path:
+        asset_name = Path(asset_path).name
+        try:
+            return resolve_image_asset(asset_name).read_bytes()
+        except FileNotFoundError:
+            if not urlparse(image_url).scheme:
+                raise
+    return _image_bytes(image_url)
+
+
 def persist_image(image_url: str) -> str:
     if "/api/indigo/image-assets/" in image_url:
         return image_url
