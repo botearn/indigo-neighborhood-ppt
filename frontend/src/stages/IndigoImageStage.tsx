@@ -22,6 +22,8 @@ type Props = {
   onCancel: () => void
   onRetry: () => void
   onRestart: () => void
+  downloading: boolean
+  onDownload: () => void
   onNext: () => void
   onBack: () => void
 }
@@ -49,13 +51,17 @@ export function IndigoImageStage({
   onCancel,
   onRetry,
   onRestart,
+  downloading,
+  onDownload,
   onNext,
   onBack,
 }: Props) {
   const hasImages = story.beats.some(beat => IMAGE_FIELDS.some(({ field }) => !!beat[field]))
-  const hasAllImages = story.beats.every(
-    beat => IMAGE_FIELDS.every(({ field }) => !!beat[field]),
+  const imageCount = story.beats.reduce(
+    (count, beat) => count + IMAGE_FIELDS.filter(({ field }) => !!beat[field]).length,
+    0,
   )
+  const hasAllImages = imageCount === 24
 
   return (
     <div className="h-full overflow-y-auto">
@@ -98,6 +104,32 @@ export function IndigoImageStage({
             </button>
           </section>
         ) : null}
+
+        <section className="mb-8 border-y border-[#2a2a28] py-4 flex items-center justify-between gap-5">
+          <div>
+            <p className="text-[13px] text-[#f5f5f0]">原始图片包</p>
+            <p className="mt-1 font-mono text-[10px] tracking-[0.14em] uppercase text-[#6b7280]">
+              6 个空间 × 4 张图片 · ZIP
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={!hasAllImages || downloading}
+            className="shrink-0 min-w-[176px] px-4 py-3 rounded border border-[#c8a96e]/60 text-[#c8a96e] hover:bg-[#c8a96e] hover:text-[#0f0f0f] transition disabled:border-[#2a2a28] disabled:text-[#6b7280] disabled:bg-transparent disabled:cursor-not-allowed"
+          >
+            <span className="flex items-center justify-center gap-3">
+              <span aria-hidden="true" className="text-base leading-none">↓</span>
+              <span className="font-mono text-[10px] tracking-[0.16em] uppercase">
+                {downloading
+                  ? '正在打包…'
+                  : hasAllImages
+                    ? '下载全部图片 · 24'
+                    : `生成中 · ${imageCount} / 24`}
+              </span>
+            </span>
+          </button>
+        </section>
 
         {loading && !hasImages ? (
           <div className="grid grid-cols-2 gap-4">
