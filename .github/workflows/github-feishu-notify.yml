@@ -1,4 +1,4 @@
-name: GitHub Feishu Notifications
+name: GitHub 飞书通知
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   notify:
-    name: Send Feishu notification
+    name: 发送飞书通知
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.ref == 'refs/heads/main' ||
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send card
+      - name: 发送卡片
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
@@ -43,7 +43,7 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
         run: |
           if [ -z "$FEISHU_WEBHOOK_URL" ]; then
-            echo "::notice::FEISHU_WEBHOOK_URL is not configured; skipping Feishu notification."
+            echo "::notice::未配置 FEISHU_WEBHOOK_URL，跳过飞书通知。"
             exit 0
           fi
 
@@ -119,22 +119,22 @@ jobs:
                   files.update(commit.get("modified") or [])
                   files.update(commit.get("removed") or [])
 
-              prefix = "Force-push" if forced else "Push"
-              title = truncate(f"Indigo GitHub | {prefix} to {branch}")
+              prefix = "强制推送" if forced else "推送"
+              title = truncate(f"Indigo GitHub｜{branch} {prefix}")
               elements = [
                   div(
                       f"**{truncate(head_msg, 120)}**"
                       if head_msg
-                      else f"Repository update on `{branch}`."
+                      else f"`{branch}` 分支有新的代码更新。"
                   ),
                   {
                       "tag": "column_set",
                       "flex_mode": "stretch",
                       "horizontal_spacing": "default",
                       "columns": [
-                          stat_col(f"**Actor**\n{pusher}"),
-                          stat_col(f"**Branch**\n`{branch}`"),
-                          stat_col(f"**Scope**\n{n_commits} commits / {len(files)} files"),
+                          stat_col(f"**触发人**\n{pusher}"),
+                          stat_col(f"**分支**\n`{branch}`"),
+                          stat_col(f"**范围**\n{n_commits} 个提交 / {len(files)} 个文件"),
                       ],
                   }
               ]
@@ -150,21 +150,21 @@ jobs:
                       else:
                           lines.append(f"- `{sha}` {msg}")
                   if n_commits > 5:
-                      lines.append(f"- ... total {n_commits} commits")
-                  elements.append(div("**Recent commits**\n" + "\n".join(lines)))
+                      lines.append(f"- ... 共 {n_commits} 个提交")
+                  elements.append(div("**最近提交**\n" + "\n".join(lines)))
 
               elements.append(
                   note(
-                      f"Repository: `{repo_label()}`. "
-                      + ("Force-push detected; verify branch state." if forced else "Sent by GitHub Actions.")
+                      f"仓库：`{repo_label()}`。"
+                      + ("检测到强制推送，请确认分支状态。" if forced else "由 GitHub Actions 自动发送。")
                   )
               )
 
-              actions = [action_button("Workflow run", run_url(), "default")]
+              actions = [action_button("查看运行", run_url(), "default")]
               if payload.get("compare"):
-                  actions.insert(0, action_button("View compare", payload["compare"], "primary"))
+                  actions.insert(0, action_button("查看对比", payload["compare"], "primary"))
               if head_commit.get("url"):
-                  actions.insert(1, action_button("Latest commit", head_commit["url"], "default"))
+                  actions.insert(1, action_button("最新提交", head_commit["url"], "default"))
               elements.append({"tag": "action", "actions": actions[:3]})
 
               return {
@@ -190,17 +190,17 @@ jobs:
               url = pr.get("html_url") or ""
 
               verb = {
-                  "opened": "opened",
-                  "edited": "edited",
-                  "reopened": "reopened",
-                  "synchronize": "updated",
-                  "ready_for_review": "ready for review",
-                  "converted_to_draft": "converted to draft",
-                  "review_requested": "review requested",
+                  "opened": "新建",
+                  "edited": "编辑",
+                  "reopened": "重新打开",
+                  "synchronize": "更新",
+                  "ready_for_review": "标记为可评审",
+                  "converted_to_draft": "转为草稿",
+                  "review_requested": "请求评审",
               }.get(action, action.replace("_", " "))
               template = "orange"
               if action == "closed":
-                  verb = "merged" if pr.get("merged") else "closed"
+                  verb = "已合并" if pr.get("merged") else "已关闭"
                   template = "green" if pr.get("merged") else "grey"
               elif action in ("reopened", "ready_for_review"):
                   template = "orange"
@@ -209,7 +209,7 @@ jobs:
               elif action == "converted_to_draft":
                   template = "grey"
 
-              title = truncate(f"Indigo GitHub | PR #{number} {verb}")
+              title = truncate(f"Indigo GitHub｜PR #{number} {verb}")
               elements = [
                   div(f"**{truncate(title_text, 120)}**"),
                   {
@@ -217,8 +217,8 @@ jobs:
                       "flex_mode": "stretch",
                       "horizontal_spacing": "default",
                       "columns": [
-                          stat_col(f"**Author**\n{user}"),
-                          stat_col(f"**Branch**\n`{head}` -> `{base}`"),
+                          stat_col(f"**作者**\n{user}"),
+                          stat_col(f"**分支**\n`{head}` -> `{base}`"),
                       ],
                   },
                   {
@@ -226,23 +226,23 @@ jobs:
                       "flex_mode": "stretch",
                       "horizontal_spacing": "default",
                       "columns": [
-                          stat_col(f"**Discussion**\n{(pr.get('comments') or 0) + (pr.get('review_comments') or 0)} comments"),
-                          stat_col(f"**Files**\n{pr.get('changed_files') or 0} changed"),
-                          stat_col(f"**Diff**\n+{pr.get('additions') or 0} / -{pr.get('deletions') or 0}"),
+                          stat_col(f"**讨论**\n{(pr.get('comments') or 0) + (pr.get('review_comments') or 0)} 条评论"),
+                          stat_col(f"**文件**\n{pr.get('changed_files') or 0} 个文件"),
+                          stat_col(f"**变更**\n+{pr.get('additions') or 0} / -{pr.get('deletions') or 0}"),
                       ],
                   },
               ]
 
               reviewer = payload.get("requested_reviewer") or {}
               if reviewer.get("login"):
-                  elements.append(div(f"**Review requested**\n@{reviewer['login']}"))
+                  elements.append(div(f"**请求评审**\n@{reviewer['login']}"))
 
-              elements.append(note(f"Repository: `{repo_label()}`. Event: `{action}`."))
+              elements.append(note(f"仓库：`{repo_label()}`。PR 事件：{verb}。"))
 
-              actions = [action_button("Workflow run", run_url(), "default")]
+              actions = [action_button("查看运行", run_url(), "default")]
               if url:
-                  actions.insert(0, action_button("View PR", url, "primary"))
-                  actions.insert(1, action_button("Files changed", f"{url}/files", "default"))
+                  actions.insert(0, action_button("查看 PR", url, "primary"))
+                  actions.insert(1, action_button("文件变更", f"{url}/files", "default"))
               elements.append({"tag": "action", "actions": actions[:3]})
 
               return {
@@ -264,23 +264,23 @@ jobs:
                   "msg_type": "interactive",
                   "card": {
                       "header": {
-                          "title": {"tag": "plain_text", "content": "Indigo GitHub | Notification test"},
+                          "title": {"tag": "plain_text", "content": "Indigo GitHub｜通知测试"},
                           "template": "blue",
                       },
                       "elements": [
-                          div("**GitHub Actions -> Feishu is ready.**"),
+                          div("**GitHub Actions → 飞书通知已就绪。**"),
                           {
                               "tag": "column_set",
                               "flex_mode": "stretch",
                               "horizontal_spacing": "default",
                               "columns": [
-                                  stat_col(f"**Repository**\n`{repo}`"),
-                                  stat_col(f"**Actor**\n{actor}"),
-                                  stat_col("**Mode**\nManual smoke test"),
+                                  stat_col(f"**仓库**\n`{repo}`"),
+                                  stat_col(f"**触发人**\n{actor}"),
+                                  stat_col("**模式**\n手动测试"),
                               ],
                           },
-                          note("This flow uses GitHub Actions Secret `FEISHU_WEBHOOK_URL`; no repo webhook or Fly webhook is required."),
-                          {"tag": "action", "actions": [action_button("Workflow run", run_url(), "primary")]},
+                          note("此流程使用 GitHub Actions Secret `FEISHU_WEBHOOK_URL`，不再依赖 GitHub repo Webhook 或 Fly 后端 Webhook。"),
+                          {"tag": "action", "actions": [action_button("查看运行", run_url(), "primary")]},
                       ],
                   },
               }
