@@ -3,10 +3,15 @@
 记录可以接入飞书群的通知/机器人方案，按优先级排序。
 
 当前已接入：
-- ✅ GitHub Webhook（push / pull_request）→ 飞书卡片通知
-  - 后端路由：`POST /webhook/github`
+- ✅ GitHub Actions（push main / pull_request updates targeting main）→ 飞书卡片通知
+  - Workflow：`.github/workflows/github-feishu-notify.yml`
+  - GitHub Actions Secret：`FEISHU_WEBHOOK_URL`
+  - 不再依赖 GitHub repo Webhook 或 Fly 后端 `/webhook/github`
+
+保留的遗留方案：
+- GitHub repo Webhook → Fly 后端 `POST /webhook/github` → 飞书卡片通知
   - 代码位置：[backend/app/api/github_webhook.py](../backend/app/api/github_webhook.py)
-  - 环境变量：`FEISHU_WEBHOOK_URL`、`GITHUB_WEBHOOK_SECRET`（可选）
+  - Fly 环境变量：`FEISHU_WEBHOOK_URL`、`GITHUB_WEBHOOK_SECRET`（可选）
 
 ---
 
@@ -66,12 +71,12 @@
 - **价值**：内部 demo 体验非常炫，老板/同事不用打开网页
 
 ### 8. GitHub Actions CI 通知
-等之后加测试/CI 后接入，测试失败/通过推送飞书。
+基础 GitHub 事件通知已由 `.github/workflows/github-feishu-notify.yml` 接入。等之后加测试/CI 后，可以继续补充测试失败/通过的专门卡片。
 
 ---
 
 ## 实现复用
 
-所有 Render/Vercel/Sentry 等转发型集成都可以共用现有的 `_send_feishu()` 飞书发送函数（在 [github_webhook.py](../backend/app/api/github_webhook.py) 里），只是构造卡片的逻辑不同。
+所有 Render/Vercel/Sentry 等后端转发型集成都可以共用现有的 `send_card()` 飞书发送函数（在 [backend/app/integrations/feishu.py](../backend/app/integrations/feishu.py) 里），只是构造卡片的逻辑不同。
 
-可以考虑把 `_send_feishu()` 抽到 `backend/app/integrations/feishu.py` 里复用。
+GitHub 事件通知现在优先走 GitHub Actions 直发飞书，避免 repo Webhook URL 随后端平台迁移而失效。

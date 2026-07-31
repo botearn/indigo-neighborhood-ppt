@@ -67,6 +67,14 @@ fly secrets set \
   --app indigo-ppt-backend
 ```
 
+GitHub-to-Feishu repository notifications do not use the backend webhook path. Set this repository secret in GitHub Actions instead:
+
+```text
+FEISHU_WEBHOOK_URL
+```
+
+The legacy backend webhook path can still use Fly secrets `FEISHU_WEBHOOK_URL` and `GITHUB_WEBHOOK_SECRET`, but the preferred notification flow is now GitHub Actions → Feishu.
+
 Create a deploy token for GitHub Actions:
 
 ```bash
