@@ -1,0 +1,330 @@
+name: GitHub 飞书通知
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - ready_for_review
+      - converted_to_draft
+      - closed
+      - review_requested
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    name: 发送飞书通知
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main' ||
+      github.base_ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 发送卡片
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$FEISHU_WEBHOOK_URL" ]; then
+            echo "::notice::未配置 FEISHU_WEBHOOK_URL，跳过飞书通知。"
+            exit 0
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+
+          def truncate(value, limit=90):
+              value = value or ""
+              return value if len(value) <= limit else value[: limit - 3] + "..."
+
+
+          def div(content):
+              return {"tag": "div", "text": {"tag": "lark_md", "content": content}}
+
+
+          def note(content):
+              return {"tag": "note", "elements": [{"tag": "lark_md", "content": content}]}
+
+
+          def stat_col(content):
+              return {
+                  "tag": "column",
+                  "width": "weighted",
+                  "weight": 1,
+                  "vertical_align": "center",
+                  "elements": [
+                      {"tag": "div", "text": {"tag": "lark_md", "content": content}}
+                  ],
+              }
+
+
+          def action_button(text, url, button_type="default"):
+              return {
+                  "tag": "button",
+                  "text": {"tag": "plain_text", "content": text},
+                  "url": url,
+                  "type": button_type,
+              }
+
+
+          def run_url():
+              return (
+                  f"{os.environ['GITHUB_SERVER_URL']}/"
+                  f"{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['GITHUB_RUN_ID']}"
+              )
+
+
+          def repo_label():
+              return os.environ["GITHUB_REPOSITORY"]
+
+
+          def push_card(payload):
+              if payload.get("deleted"):
+                  return None
+
+              branch = payload.get("ref", "").replace("refs/heads/", "") or "unknown"
+              pusher = payload.get("pusher", {}).get("name") or os.environ.get("GITHUB_ACTOR", "unknown")
+              commits = payload.get("commits") or []
+              head_commit = payload.get("head_commit") or {}
+              head_msg = (head_commit.get("message") or "").splitlines()[0]
+              n_commits = len(commits)
+              forced = bool(payload.get("forced"))
+
+              files = set()
+              for commit in commits:
+                  files.update(commit.get("added") or [])
+                  files.update(commit.get("modified") or [])
+                  files.update(commit.get("removed") or [])
+
+              prefix = "强制推送" if forced else "推送"
+              title = truncate(f"Indigo GitHub｜{branch} {prefix}")
+              elements = [
+                  div(
+                      f"**{truncate(head_msg, 120)}**"
+                      if head_msg
+                      else f"`{branch}` 分支有新的代码更新。"
+                  ),
+                  {
+                      "tag": "column_set",
+                      "flex_mode": "stretch",
+                      "horizontal_spacing": "default",
+                      "columns": [
+                          stat_col(f"**触发人**\n{pusher}"),
+                          stat_col(f"**分支**\n`{branch}`"),
+                          stat_col(f"**范围**\n{n_commits} 个提交 / {len(files)} 个文件"),
+                      ],
+                  }
+              ]
+
+              if commits:
+                  lines = []
+                  for commit in list(commits)[-5:][::-1]:
+                      sha = (commit.get("id") or "")[:7]
+                      msg = truncate((commit.get("message") or "").splitlines()[0], 100)
+                      commit_url = commit.get("url")
+                      if commit_url:
+                          lines.append(f"- [`{sha}`]({commit_url}) {msg}")
+                      else:
+                          lines.append(f"- `{sha}` {msg}")
+                  if n_commits > 5:
+                      lines.append(f"- ... 共 {n_commits} 个提交")
+                  elements.append(div("**最近提交**\n" + "\n".join(lines)))
+
+              elements.append(
+                  note(
+                      f"仓库：`{repo_label()}`。"
+                      + ("检测到强制推送，请确认分支状态。" if forced else "由 GitHub Actions 自动发送。")
+                  )
+              )
+
+              actions = [action_button("查看运行", run_url(), "default")]
+              if payload.get("compare"):
+                  actions.insert(0, action_button("查看对比", payload["compare"], "primary"))
+              if head_commit.get("url"):
+                  actions.insert(1, action_button("最新提交", head_commit["url"], "default"))
+              elements.append({"tag": "action", "actions": actions[:3]})
+
+              return {
+                  "msg_type": "interactive",
+                  "card": {
+                      "header": {
+                          "title": {"tag": "plain_text", "content": title},
+                          "template": "red" if forced else "blue",
+                      },
+                      "elements": elements,
+                  },
+              }
+
+
+          def pull_request_card(payload):
+              action = payload.get("action") or "updated"
+              pr = payload.get("pull_request") or {}
+              number = pr.get("number") or payload.get("number") or ""
+              title_text = pr.get("title") or ""
+              user = (pr.get("user") or {}).get("login") or "unknown"
+              base = (pr.get("base") or {}).get("ref") or "unknown"
+              head = (pr.get("head") or {}).get("ref") or "unknown"
+              url = pr.get("html_url") or ""
+
+              verb = {
+                  "opened": "新建",
+                  "edited": "编辑",
+                  "reopened": "重新打开",
+                  "synchronize": "更新",
+                  "ready_for_review": "标记为可评审",
+                  "converted_to_draft": "转为草稿",
+                  "review_requested": "请求评审",
+              }.get(action, action.replace("_", " "))
+              template = "orange"
+              if action == "closed":
+                  verb = "已合并" if pr.get("merged") else "已关闭"
+                  template = "green" if pr.get("merged") else "grey"
+              elif action in ("reopened", "ready_for_review"):
+                  template = "orange"
+              elif action == "synchronize":
+                  template = "blue"
+              elif action == "converted_to_draft":
+                  template = "grey"
+
+              title = truncate(f"Indigo GitHub｜PR #{number} {verb}")
+              elements = [
+                  div(f"**{truncate(title_text, 120)}**"),
+                  {
+                      "tag": "column_set",
+                      "flex_mode": "stretch",
+                      "horizontal_spacing": "default",
+                      "columns": [
+                          stat_col(f"**作者**\n{user}"),
+                          stat_col(f"**分支**\n`{head}` -> `{base}`"),
+                      ],
+                  },
+                  {
+                      "tag": "column_set",
+                      "flex_mode": "stretch",
+                      "horizontal_spacing": "default",
+                      "columns": [
+                          stat_col(f"**讨论**\n{(pr.get('comments') or 0) + (pr.get('review_comments') or 0)} 条评论"),
+                          stat_col(f"**文件**\n{pr.get('changed_files') or 0} 个文件"),
+                          stat_col(f"**变更**\n+{pr.get('additions') or 0} / -{pr.get('deletions') or 0}"),
+                      ],
+                  },
+              ]
+
+              reviewer = payload.get("requested_reviewer") or {}
+              if reviewer.get("login"):
+                  elements.append(div(f"**请求评审**\n@{reviewer['login']}"))
+
+              elements.append(note(f"仓库：`{repo_label()}`。PR 事件：{verb}。"))
+
+              actions = [action_button("查看运行", run_url(), "default")]
+              if url:
+                  actions.insert(0, action_button("查看 PR", url, "primary"))
+                  actions.insert(1, action_button("文件变更", f"{url}/files", "default"))
+              elements.append({"tag": "action", "actions": actions[:3]})
+
+              return {
+                  "msg_type": "interactive",
+                  "card": {
+                      "header": {
+                          "title": {"tag": "plain_text", "content": title},
+                          "template": template,
+                      },
+                      "elements": elements,
+                  },
+              }
+
+
+          def manual_card():
+              repo = os.environ["GITHUB_REPOSITORY"]
+              actor = os.environ.get("GITHUB_ACTOR", "unknown")
+              return {
+                  "msg_type": "interactive",
+                  "card": {
+                      "header": {
+                          "title": {"tag": "plain_text", "content": "Indigo GitHub｜通知测试"},
+                          "template": "blue",
+                      },
+                      "elements": [
+                          div("**GitHub Actions → 飞书通知已就绪。**"),
+                          {
+                              "tag": "column_set",
+                              "flex_mode": "stretch",
+                              "horizontal_spacing": "default",
+                              "columns": [
+                                  stat_col(f"**仓库**\n`{repo}`"),
+                                  stat_col(f"**触发人**\n{actor}"),
+                                  stat_col("**模式**\n手动测试"),
+                              ],
+                          },
+                          note("此流程使用 GitHub Actions Secret `FEISHU_WEBHOOK_URL`，不再依赖 GitHub repo Webhook 或 Fly 后端 Webhook。"),
+                          {"tag": "action", "actions": [action_button("查看运行", run_url(), "primary")]},
+                      ],
+                  },
+              }
+
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as event_file:
+              payload = json.load(event_file)
+
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          if event_name == "push":
+              card = push_card(payload)
+          elif event_name == "pull_request":
+              card = pull_request_card(payload)
+          elif event_name == "workflow_dispatch":
+              card = manual_card()
+          else:
+              card = None
+
+          if card is None:
+              print(f"No notification needed for event {event_name}.")
+              sys.exit(0)
+
+          data = json.dumps(card).encode("utf-8")
+          request = urllib.request.Request(
+              os.environ["FEISHU_WEBHOOK_URL"],
+              data=data,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+
+          try:
+              with urllib.request.urlopen(request, timeout=10) as response:
+                  response_body = response.read().decode("utf-8", "replace")
+          except urllib.error.HTTPError as exc:
+              print(exc.read().decode("utf-8", "replace"), file=sys.stderr)
+              raise
+
+          print(response_body)
+          try:
+              parsed = json.loads(response_body)
+          except json.JSONDecodeError:
+              parsed = {}
+
+          status_code = parsed.get("StatusCode", parsed.get("code", 0))
+          if status_code not in (0, None):
+              raise SystemExit(f"Feishu webhook returned non-success response: {response_body}")
+          PY
