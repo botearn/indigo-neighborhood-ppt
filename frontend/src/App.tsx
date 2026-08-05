@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import {
   locate,
   generateIndigoText,
+  generateIndigoResearch,
   editIndigo,
+  editIndigoResearch,
   regenerateIndigoImage,
   exportIndigoImages,
   exportIndigoPpt,
@@ -16,11 +18,12 @@ import {
   type GenerationHistoryItem,
   type IndigoImageTarget,
 } from './api'
-import type { IndigoStoryUnit } from './indigo_types'
+import type { IndigoResearchBrief, IndigoStoryUnit } from './indigo_types'
 import { MapPicker, reverseGeocode, type GeoResult } from './MapPicker'
 import { MapBackdrop } from './MapBackdrop'
 import { Concierge, type ConciergeMessage } from './Concierge'
 import { StepNav, type StepDef } from './StepNav'
+import { IndigoResearchStage } from './stages/IndigoResearchStage'
 import { IndigoTextStage } from './stages/IndigoTextStage'
 import { IndigoImageStage, indigoImageTargetLabel } from './stages/IndigoImageStage'
 import { IndigoStructureStage } from './stages/IndigoStructureStage'
@@ -33,10 +36,11 @@ import { useIndigoImageJob } from './useIndigoImageJob'
 
 const STEP_DEFS: { num: number; label: string; sublabel: string }[] = [
   { num: 1, label: '选址', sublabel: 'Pick a neighborhood' },
-  { num: 2, label: '文字', sublabel: 'Confirm the story' },
-  { num: 3, label: '图片', sublabel: 'Shape the imagery' },
-  { num: 4, label: '结构', sublabel: 'Arrange the deck' },
-  { num: 5, label: '导出', sublabel: 'Export PPT' },
+  { num: 2, label: '调研', sublabel: 'Research the neighborhood' },
+  { num: 3, label: '文字', sublabel: 'Confirm the story' },
+  { num: 4, label: '图片', sublabel: 'Shape the imagery' },
+  { num: 5, label: '结构', sublabel: 'Arrange the deck' },
+  { num: 6, label: '导出', sublabel: 'Export PPT' },
 ]
 
 function now() {
@@ -47,9 +51,9 @@ function now() {
 const INITIAL_VIEW = { longitude: 116.4074, latitude: 39.9042, zoom: 11 }
 
 const rawPersisted = loadState()
-const wasStuckMidGenerate = !!(rawPersisted && rawPersisted.step >= 2 && !rawPersisted.story)
+const wasStuckMidGenerate = !!(rawPersisted && rawPersisted.step >= 3 && !rawPersisted.story)
 const persisted = wasStuckMidGenerate
-  ? { step: 1, candidate: rawPersisted!.candidate, story: null, messages: [] }
+  ? { step: 1, candidate: rawPersisted!.candidate, research: null, story: null, messages: [] }
   : rawPersisted
 
 type AppMode = 'home' | 'fast' | 'guided'
@@ -71,6 +75,7 @@ const persistedFastRecovery = loadFastState()
 const hasGuidedRecovery = !!persisted && (
   persisted.step > 1 ||
   persisted.candidate !== null ||
+  persisted.research !== null ||
   persisted.story !== null ||
   persisted.messages.length > 0
 )
@@ -93,8 +98,10 @@ export default function App() {
       : INITIAL_VIEW,
   )
   const [candidate, setCandidate] = useState<GeoResult | null>(persisted?.candidate ?? null)
+  const [research, setResearch] = useState<IndigoResearchBrief | null>(persisted?.research ?? null)
   const [story, setStory] = useState<IndigoStoryUnit | null>(persisted?.story ?? null)
   const [generating, setGenerating] = useState(false)
+  const [researching, setResearching] = useState(false)
   const [editing, setEditing] = useState(false)
   const [searching, setSearching] = useState(false)
   const [startingImages, setStartingImages] = useState(false)
@@ -163,6 +170,7 @@ export default function App() {
       setAppMode('home')
       setStory(null)
       setCandidate(null)
+      setResearch(null)
       setMessages([])
       setError('')
       clearImageJob()
@@ -172,8 +180,8 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return
-    saveState({ step, candidate, story, messages })
-  }, [step, candidate, story, messages, user])
+    saveState({ step, candidate, research, story, messages })
+  }, [step, candidate, research, story, messages, user])
 
   useEffect(() => {
     if (!imageJob) return
@@ -204,7 +212,7 @@ export default function App() {
       role: 'agent',
       content,
       timestamp: now(),
-      step: 3,
+      step: 4,
     }])
     void refreshHistory()
     // History refresh is a side effect of a terminal job transition.
@@ -245,7 +253,7 @@ export default function App() {
       role: 'agent',
       content: '开始生成这套 Indigo 图片。',
       timestamp: now(),
-      step: 3,
+      step: 4,
     })
     try {
       const created = await startImageJob(s)
@@ -255,7 +263,7 @@ export default function App() {
         role: 'agent',
         content: `图片任务没有启动：${e instanceof Error ? e.message : 'unknown'}`,
         timestamp: now(),
-        step: 3,
+        step: 4,
       })
     } finally {
       setStartingImages(false)
@@ -263,7 +271,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (step !== 3 || !story || imagingPics) return
+    if (step !== 4 || !story || imagingPics) return
     if (hasIndigoImages(story)) return
     if (story.image_job_id) return
     void triggerImageGen(story)
@@ -278,21 +286,58 @@ export default function App() {
     setCandidate(r)
     setStep(2)
     setError('')
-    setGenerating(true)
+    setResearch(null)
+    setStory(null)
+    clearImageJob()
     pushMessage({
       role: 'agent',
-      content: `好。先为 ${r.city} · ${r.neighborhood} 生成 Indigo 22 页故事文字。`,
+      content: `进入 Stage 1 Research：${r.city} · ${r.neighborhood}。我先把调研稿拆出来，等你讨论和修正。`,
       timestamp: now(),
       step: 2,
     })
+    setResearching(true)
     try {
-      const result = await generateIndigoText(r.city, r.neighborhood)
+      const brief = await generateIndigoResearch(r.city, r.neighborhood)
+      setResearch(brief)
+      pushMessage({
+        role: 'agent',
+        content: `研究稿好了：${brief.findings.length} 条 finding，${brief.questions.length} 个待追问问题。你可以先讨论、补充来源，或者让我再调研某个方向。`,
+        timestamp: now(),
+        step: 2,
+      })
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Research failed'
+      setError(message)
+      pushMessage({
+        role: 'agent',
+        content: `研究稿没有生成成功：${message}`,
+        timestamp: now(),
+        step: 2,
+      })
+    } finally {
+      setResearching(false)
+    }
+  }
+
+  async function startStoryWriting() {
+    if (!candidate) return
+    setStep(3)
+    setError('')
+    setGenerating(true)
+    pushMessage({
+      role: 'agent',
+      content: `Stage 1 方向确认。现在为 ${candidate.city} · ${candidate.neighborhood} 生成 Indigo 22 页故事文字。`,
+      timestamp: now(),
+      step: 3,
+    })
+    try {
+      const result = await generateIndigoText(candidate.city, candidate.neighborhood, undefined, research)
       setStory(result)
       pushMessage({
         role: 'agent',
         content: `文字稿好了。我给了 ${result.taglines.length} 个标题方向、3 个源起角度和 ${result.beats.length} 个酒店触点。先看文字。`,
         timestamp: now(),
-        step: 2,
+        step: 3,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
@@ -300,7 +345,7 @@ export default function App() {
         role: 'agent',
         content: `出了点问题：${e instanceof Error ? e.message : 'unknown'}。回到选址再来一次？`,
         timestamp: now(),
-        step: 2,
+        step: 3,
       })
     } finally {
       setGenerating(false)
@@ -381,6 +426,33 @@ export default function App() {
     }
 
     if (step === 2) {
+      if (!candidate) return
+      setResearching(true)
+      try {
+        const updated = research
+          ? await editIndigoResearch(research, instruction, messages)
+          : await generateIndigoResearch(candidate.city, candidate.neighborhood)
+        setResearch(updated)
+        pushMessage({
+          role: 'agent',
+          content: `调研稿已更新。现在有 ${updated.findings.length} 条 finding；没有可靠来源的内容仍标为待核。`,
+          timestamp: now(),
+          step: 2,
+        })
+      } catch (e) {
+        pushMessage({
+          role: 'agent',
+          content: `调研没更新成功：${e instanceof Error ? e.message : 'unknown'}。换个方向再试？`,
+          timestamp: now(),
+          step: 2,
+        })
+      } finally {
+        setResearching(false)
+      }
+      return
+    }
+
+    if (step === 3) {
       if (!story) return
       setEditing(true)
       try {
@@ -390,14 +462,14 @@ export default function App() {
           role: 'agent',
           content: '改好了。看看这版？',
           timestamp: now(),
-          step: 2,
+          step: 3,
         })
       } catch (e) {
         pushMessage({
           role: 'agent',
           content: `没改成：${e instanceof Error ? e.message : 'unknown'}。换个说法再试？`,
           timestamp: now(),
-          step: 2,
+          step: 3,
         })
       } finally {
         setEditing(false)
@@ -405,7 +477,7 @@ export default function App() {
       return
     }
 
-    if (step === 4) {
+    if (step === 5) {
       if (!story) return
       setEditing(true)
       try {
@@ -415,14 +487,14 @@ export default function App() {
           role: 'agent',
           content: '改好了。再看看？',
           timestamp: now(),
-          step: 4,
+          step: 5,
         })
       } catch (e) {
         pushMessage({
           role: 'agent',
           content: `没改成：${e instanceof Error ? e.message : 'unknown'}。`,
           timestamp: now(),
-          step: 4,
+          step: 5,
         })
       } finally {
         setEditing(false)
@@ -430,14 +502,14 @@ export default function App() {
       return
     }
 
-    if (step === 3) {
+    if (step === 4) {
       if (!story) return
       if (!selectedImage) {
         pushMessage({
           role: 'agent',
           content: '先点一张图选中，再告诉我怎么改。',
           timestamp: now(),
-          step: 3,
+          step: 4,
         })
         return
       }
@@ -458,14 +530,14 @@ export default function App() {
           role: 'agent',
           content: `「${targetLabel}」换好了。看看这版？`,
           timestamp: now(),
-          step: 3,
+          step: 4,
         })
       } catch (e) {
         pushMessage({
           role: 'agent',
           content: `没改成：${e instanceof Error ? e.message : 'unknown'}。换个说法再试？`,
           timestamp: now(),
-          step: 3,
+          step: 4,
         })
       } finally {
         setRegeneratingImage(null)
@@ -489,7 +561,7 @@ export default function App() {
       role: 'agent',
       content: '正在用 Indigo 22 页模板生成可编辑 PPTX。',
       timestamp: now(),
-      step: 5,
+      step: 6,
     })
     try {
       await exportIndigoPpt(story)
@@ -498,7 +570,7 @@ export default function App() {
         role: 'agent',
         content: '导出完成。这一版和一键生成共用同一个可编辑 PPTX builder。',
         timestamp: now(),
-        step: 5,
+        step: 6,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Export failed')
@@ -506,7 +578,7 @@ export default function App() {
         role: 'agent',
         content: `导出失败：${e instanceof Error ? e.message : 'unknown'}`,
         timestamp: now(),
-        step: 5,
+        step: 6,
       })
     } finally {
       setExporting(false)
@@ -523,7 +595,7 @@ export default function App() {
         role: 'agent',
         content: '24 张原图已经整理成 ZIP 下载。',
         timestamp: now(),
-        step: 3,
+        step: 4,
       })
     } catch (e) {
       const message = e instanceof Error ? e.message : '图片下载失败'
@@ -532,7 +604,7 @@ export default function App() {
         role: 'agent',
         content: `图片下载失败：${message}`,
         timestamp: now(),
-        step: 3,
+        step: 4,
       })
     } finally {
       setDownloadingImages(false)
@@ -554,6 +626,7 @@ export default function App() {
       setStep(1)
       setStory(null)
       setCandidate(null)
+      setResearch(null)
       setMessages([])
       setError('')
       clearState()
@@ -570,6 +643,7 @@ export default function App() {
     setStep(1)
     setStory(null)
     setCandidate(null)
+    setResearch(null)
     setMessages([])
     setError('')
     clearState()
@@ -587,6 +661,7 @@ export default function App() {
     setStep(1)
     setStory(null)
     setCandidate(null)
+    setResearch(null)
     setMessages([])
     setError('')
     clearState()
@@ -606,6 +681,7 @@ export default function App() {
     setAppMode('home')
     setStory(null)
     setCandidate(null)
+    setResearch(null)
     setMessages([])
     clearImageJob()
     clearState()
@@ -626,12 +702,13 @@ export default function App() {
         return
       }
       setStory(detail.story)
-      setStep(hasIndigoImages(detail.story) ? 4 : 3)
+      setResearch(null)
+      setStep(hasIndigoImages(detail.story) ? 5 : 4)
       setMessages([{
         role: 'agent',
         content: `已打开历史记录：${detail.title}`,
         timestamp: now(),
-        step: 4,
+        step: 5,
       }])
       setAppMode('guided')
     } catch (e) {
@@ -644,37 +721,41 @@ export default function App() {
   const stepDefs: StepDef[] = STEP_DEFS.map(s => ({
     num: s.num,
     label: s.label,
-    enabled: s.num === 1 || (story !== null && s.num <= 5),
+    enabled: s.num === 1 || (s.num === 2 && candidate !== null) || (story !== null && s.num <= 6),
   }))
 
   const conciergeStepLabel = STEP_DEFS[step - 1]?.sublabel ?? ''
   const conciergeThinking =
-    generating || editing || searching || imagingPics || regeneratingImage !== null || exporting
-  const conciergeDisabled = generating || imagingPics || exporting
+    researching || generating || editing || searching || imagingPics || regeneratingImage !== null || downloadingImages || exporting
+  const conciergeDisabled = generating || imagingPics || downloadingImages || exporting
 
   const stepPlaceholder =
     step === 1
       ? '比如「上海 徐汇」、「成都 玉林」'
       : step === 2
+      ? '比如「查地方志和老地图」、「补报纸档案」、「这条来源不够…」'
+    : step === 3
       ? '告诉我要怎么改文字…'
-      : step === 3
+    : step === 4
       ? '比如「这张换成黄昏」、「Mood 再 cinematic 一些」'
-      : step === 4
-      ? '比如「把第 3 个 touchpoint 放前面」、「入口先讲」'
       : step === 5
+      ? '比如「把第 3 个 touchpoint 放前面」、「入口先讲」'
+      : step === 6
       ? '点导出 PPT 下载，或者回上一步再改。'
       : 'Ask the concierge…'
 
   const stepHint =
     step === 1
       ? '告诉我你想做哪里的 PPT。可以直接说「上海 武康路」、「我想要北京胡同的感觉」，或者直接点地图。'
-      : step === 3
+      : step === 2
+      ? 'Stage 1 是多媒介调研台。你可以要求补图书馆/档案库、影像、地图、口述或实地线索，再进入写作。'
+      : step === 4
       ? selectedImage
         ? '告诉我这张图要怎么改。比如「换成黄昏」、「再 cinematic 一些」、「人多一点」。'
         : '点一张图选中，再让我改它。'
-      : step === 4
-      ? '↑↓ 调整 touchpoint 顺序。逐步导出会使用和一键生成同一套 22 页 PPTX builder。'
       : step === 5
+      ? '↑↓ 调整 touchpoint 顺序。逐步导出会使用和一键生成同一套 22 页 PPTX builder。'
+      : step === 6
       ? '都改完了？点下面的导出 PPT 下载文件。'
       : undefined
 
@@ -730,7 +811,7 @@ export default function App() {
       <StepNav steps={stepDefs} current={step} onJump={handleJump} onHome={handleGoHome} />
 
       <main className="flex-1 relative overflow-hidden">
-        {(step === 2 || step === 3) && candidate && (
+        {(step >= 2 && step <= 4) && candidate && (
           <MapBackdrop longitude={candidate.longitude} latitude={candidate.latitude} />
         )}
 
@@ -747,16 +828,31 @@ export default function App() {
 
         {step === 2 && (
           <div className="absolute inset-0 pr-[412px]">
+            {candidate && (
+              <IndigoResearchStage
+                candidate={candidate}
+                research={research}
+                loading={researching}
+                onStartWriting={() => void startStoryWriting()}
+                onResearchAction={instruction => void handleSendInstruction(instruction)}
+                onBack={() => handleJump(1)}
+              />
+            )}
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="absolute inset-0 pr-[412px]">
             <IndigoTextStage
               story={story}
               loading={generating}
               pendingLocation={candidate ? { city: candidate.city, district: candidate.neighborhood } : null}
-              onNext={() => setStep(3)}
+              onNext={() => setStep(4)}
             />
           </div>
         )}
 
-        {step === 3 && story && (
+        {step === 4 && story && (
           <div className="absolute inset-0 pr-[412px]">
             <IndigoImageStage
               story={story}
@@ -773,17 +869,6 @@ export default function App() {
               onRestart={() => void startImageJob(imageJob?.story ?? story)}
               downloading={downloadingImages}
               onDownload={() => void handleDownloadImages()}
-              onNext={() => setStep(4)}
-              onBack={() => setStep(2)}
-            />
-          </div>
-        )}
-
-        {step === 4 && story && (
-          <div className="absolute inset-0 pr-[412px]">
-            <IndigoStructureStage
-              story={story}
-              onReorder={reorderBeat}
               onNext={() => setStep(5)}
               onBack={() => setStep(3)}
             />
@@ -792,12 +877,23 @@ export default function App() {
 
         {step === 5 && story && (
           <div className="absolute inset-0 pr-[412px]">
+            <IndigoStructureStage
+              story={story}
+              onReorder={reorderBeat}
+              onNext={() => setStep(6)}
+              onBack={() => setStep(4)}
+            />
+          </div>
+        )}
+
+        {step === 6 && story && (
+          <div className="absolute inset-0 pr-[412px]">
             <IndigoExportStage
               story={story}
               exporting={exporting}
               exportedAt={exportedAt}
               onExport={handleExport}
-              onBack={() => setStep(4)}
+              onBack={() => setStep(5)}
             />
           </div>
         )}

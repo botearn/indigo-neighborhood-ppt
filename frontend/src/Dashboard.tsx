@@ -135,7 +135,7 @@ export function Dashboard({
                 </div>
                 <div className="mb-2 text-[20px] font-light text-[#f5f5f0] transition group-hover:text-white">逐步创作</div>
                 <div className="text-[13px] leading-relaxed text-[#8b8b84]">
-                  对话选址，逐步确认文字、图片与结构。
+                  对话选址，先做 Stage 1 调研，再确认文字、图片与结构。
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t border-[#244747]/80 pt-3">
                   <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#2d7a7a]/90">Open guide</span>
