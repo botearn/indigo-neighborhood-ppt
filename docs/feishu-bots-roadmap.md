@@ -3,10 +3,11 @@
 记录可以接入飞书群的通知/机器人方案，按优先级排序。
 
 当前已接入：
-- ✅ GitHub Actions（`main` 推送 / 目标分支为 `main` 的 PR 更新）→ 飞书卡片通知
+- ✅ GitHub Actions（仅 `main` 推送）→ 飞书卡片通知
   - Workflow：`.github/workflows/github-feishu-notify.yml`
   - GitHub Actions Secret：`FEISHU_WEBHOOK_URL`
   - 不再依赖 GitHub repo Webhook 或 Fly 后端 `/webhook/github`
+  - PR 新建、更新、合并事件通知暂时关闭；合并 PR 后只通过 `main` 推送通知体现。
 
 保留的遗留方案：
 - GitHub repo Webhook → Fly 后端 `POST /webhook/github` → 飞书卡片通知

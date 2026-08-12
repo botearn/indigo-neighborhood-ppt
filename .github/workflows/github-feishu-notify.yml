@@ -1,34 +1,17 @@
 name: GitHub 飞书通知
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - edited
-      - reopened
-      - synchronize
-      - ready_for_review
-      - converted_to_draft
-      - closed
-      - review_requested
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   notify:
     name: 发送飞书通知
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.ref == 'refs/heads/main' ||
-      github.base_ref == 'main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -292,10 +275,6 @@ jobs:
           event_name = os.environ["GITHUB_EVENT_NAME"]
           if event_name == "push":
               card = push_card(payload)
-          elif event_name == "pull_request":
-              card = pull_request_card(payload)
-          elif event_name == "workflow_dispatch":
-              card = manual_card()
           else:
               card = None
 
