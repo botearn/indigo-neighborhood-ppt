@@ -1,17 +1,49 @@
-"""Public reference image lookup for Indigo atlas places."""
+"""Search-and-scrape reference image lookup for Indigo atlas places."""
 
 from __future__ import annotations
 
 import html
 import re
+from dataclasses import dataclass
 from functools import lru_cache
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 
 from app.core.models import IndigoAtlasImageReference, IndigoAtlasPlace
+from app.services.image_assets import persist_image_bytes
 
-COMMONS_API_URL = "https://commons.wikimedia.org/w/api.php"
-COMMONS_USER_AGENT = "indigo-neighborhood-ppt/0.1 local-research-reference-fetcher"
+SEARCH_URL = "https://duckduckgo.com/html/"
+SCRAPER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
+REQUEST_HEADERS = {
+    "User-Agent": SCRAPER_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/*,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.6",
+}
+MAX_SEARCH_RESULTS = 6
+MAX_PAGES_TO_SCRAPE = 4
+MAX_IMAGE_DOWNLOAD_ATTEMPTS = 8
+MAX_HTML_CHARS = 1_200_000
+MAX_IMAGE_BYTES = 9_000_000
+MIN_IMAGE_BYTES = 8_000
+SKIP_IMAGE_EXTENSIONS = {".svg", ".ico"}
+NOISY_IMAGE_RE = re.compile(
+    r"(favicon|logo|sprite|avatar|icon|blank|placeholder|transparent|loading|qrcode|qr-code|wechat)",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class PageImageCandidate:
+    image_url: str
+    source_url: str
+    source_title: str = ""
+    alt_text: str = ""
+    rank: int = 10
 
 
 def fetch_public_reference_images(
@@ -21,23 +53,33 @@ def fetch_public_reference_images(
     place: IndigoAtlasPlace,
     limit: int = 4,
 ) -> list[IndigoAtlasImageReference]:
-    """Fetch sourced reference images from Wikimedia Commons.
+    """Find public web pages, scrape image candidates, and cache image copies.
 
-    This is intentionally an API-backed source lookup rather than blind scraping:
-    every returned image keeps its Commons source URL and license metadata.
+    These are internal research references. They are intentionally marked
+    `needs_review` because ordinary public web images do not imply permission for
+    external publication.
     """
     collected: list[IndigoAtlasImageReference] = []
-    seen: set[str] = set()
+    seen_images: set[str] = set()
+    attempted_downloads = 0
 
     for query in _search_queries(city, district, place):
-        for reference in _query_commons(query, limit=max(limit * 2, 8)):
-            key = reference.source_url or reference.image_url
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            collected.append(reference.model_copy(deep=True))
-            if len(collected) >= limit:
-                return collected
+        for page_url in _search_result_pages(query)[:MAX_PAGES_TO_SCRAPE]:
+            for candidate in _page_image_candidates(page_url):
+                if candidate.image_url in seen_images:
+                    continue
+                seen_images.add(candidate.image_url)
+                attempted_downloads += 1
+
+                reference = _download_reference(candidate, place.name)
+                if reference:
+                    collected.append(reference)
+                    if len(collected) >= limit:
+                        return collected
+
+                if attempted_downloads >= MAX_IMAGE_DOWNLOAD_ATTEMPTS:
+                    return collected
+
         if collected:
             return collected
 
@@ -46,10 +88,9 @@ def fetch_public_reference_images(
 
 def _search_queries(city: str, district: str, place: IndigoAtlasPlace) -> list[str]:
     candidates = [
-        f"{place.name} {city} {district}",
-        f"{place.name} {city}",
-        place.name,
-        f"{city} {district} {place.place_type}",
+        f"{place.name} {city} {district} 图片 照片",
+        f"{place.name} {city} 图片",
+        f"{place.name} {place.place_type} photo",
     ]
     queries: list[str] = []
     seen: set[str] = set()
@@ -62,98 +103,286 @@ def _search_queries(city: str, district: str, place: IndigoAtlasPlace) -> list[s
 
 
 @lru_cache(maxsize=256)
-def _query_commons(query: str, limit: int) -> tuple[IndigoAtlasImageReference, ...]:
-    params = {
-        "action": "query",
-        "generator": "search",
-        "gsrnamespace": "6",
-        "gsrsearch": query,
-        "gsrlimit": str(min(max(limit, 1), 12)),
-        "prop": "imageinfo",
-        "iiprop": "url|extmetadata|mime|size",
-        "iiurlwidth": "640",
-        "format": "json",
-        "formatversion": "2",
-        "origin": "*",
-    }
-    headers = {"User-Agent": COMMONS_USER_AGENT}
+def _search_result_pages(query: str) -> tuple[str, ...]:
     try:
         response = httpx.get(
-            COMMONS_API_URL,
-            params=params,
-            headers=headers,
+            SEARCH_URL,
+            params={"q": query},
+            headers=REQUEST_HEADERS,
             timeout=httpx.Timeout(5.0, connect=2.5),
             follow_redirects=True,
         )
         response.raise_for_status()
-        data = response.json()
-    except (httpx.HTTPError, ValueError):
+    except httpx.HTTPError:
         return ()
 
-    pages = data.get("query", {}).get("pages", [])
-    if not isinstance(pages, list):
+    parser = SearchResultParser()
+    parser.feed(response.text[:MAX_HTML_CHARS])
+    pages: list[str] = []
+    seen: set[str] = set()
+    for url in parser.urls:
+        normalized = _normalize_page_url(url)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        pages.append(normalized)
+        if len(pages) >= MAX_SEARCH_RESULTS:
+            break
+    return tuple(pages)
+
+
+class SearchResultParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.urls: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        attr = _attrs(attrs)
+        class_name = attr.get("class", "")
+        href = attr.get("href", "")
+        if "result__a" not in class_name and "result__url" not in class_name:
+            return
+        decoded = _decode_duckduckgo_link(href)
+        if decoded:
+            self.urls.append(decoded)
+
+
+@lru_cache(maxsize=512)
+def _page_image_candidates(page_url: str) -> tuple[PageImageCandidate, ...]:
+    try:
+        response = httpx.get(
+            page_url,
+            headers=REQUEST_HEADERS,
+            timeout=httpx.Timeout(4.0, connect=2.5),
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
         return ()
 
-    references: list[IndigoAtlasImageReference] = []
-    for page in sorted(pages, key=lambda item: item.get("index", 999)):
-        reference = _page_to_reference(page)
-        if reference:
-            references.append(reference)
-    return tuple(references)
+    content_type = response.headers.get("content-type", "")
+    if "html" not in content_type and "xml" not in content_type and "text" not in content_type:
+        return ()
+
+    final_url = str(response.url)
+    parser = PageImageParser(final_url)
+    parser.feed(response.text[:MAX_HTML_CHARS])
+
+    candidates: list[PageImageCandidate] = []
+    seen: set[str] = set()
+    source_title = _clip(parser.title, 90)
+    for candidate in sorted(parser.candidates, key=lambda item: item.rank):
+        normalized = _normalize_image_url(candidate.image_url, final_url)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        candidates.append(
+            PageImageCandidate(
+                image_url=normalized,
+                source_url=final_url,
+                source_title=source_title or _domain_label(final_url),
+                alt_text=_clip(candidate.alt_text, 140),
+                rank=candidate.rank,
+            )
+        )
+    return tuple(candidates)
 
 
-def _page_to_reference(page: dict) -> IndigoAtlasImageReference | None:
-    image_info = (page.get("imageinfo") or [{}])[0]
-    if not isinstance(image_info, dict):
+class PageImageParser(HTMLParser):
+    def __init__(self, page_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.page_url = page_url
+        self.candidates: list[PageImageCandidate] = []
+        self.title = ""
+        self._in_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        attr = _attrs(attrs)
+
+        if tag == "title":
+            self._in_title = True
+            return
+
+        if tag == "meta":
+            key = (attr.get("property") or attr.get("name") or "").lower()
+            if key in {"og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src"}:
+                self._add(attr.get("content", ""), attr.get("alt", ""), rank=0)
+            return
+
+        if tag == "link":
+            rel = attr.get("rel", "").lower()
+            if "image_src" in rel:
+                self._add(attr.get("href", ""), "", rank=1)
+            return
+
+        if tag == "img":
+            alt = attr.get("alt") or attr.get("title") or ""
+            class_name = attr.get("class", "")
+            if NOISY_IMAGE_RE.search(class_name):
+                return
+            for key in ("data-original", "data-src", "data-lazy-src", "data-actualsrc", "src"):
+                self._add(attr.get(key, ""), alt, rank=4 if key.startswith("data-") else 6)
+            for key in ("srcset", "data-srcset"):
+                self._add(_srcset_best(attr.get(key, "")), alt, rank=5)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self.title = _clean_text(f"{self.title} {data}")
+
+    def _add(self, raw_url: str, alt_text: str, *, rank: int) -> None:
+        if not raw_url:
+            return
+        self.candidates.append(
+            PageImageCandidate(
+                image_url=raw_url,
+                source_url=self.page_url,
+                alt_text=alt_text,
+                rank=rank,
+            )
+        )
+
+
+def _download_reference(candidate: PageImageCandidate, place_name: str) -> IndigoAtlasImageReference | None:
+    try:
+        image_bytes, content_type = _download_image_bytes(candidate)
+        if len(image_bytes) < MIN_IMAGE_BYTES:
+            return None
+        if "svg" in content_type:
+            return None
+        cached_url = persist_image_bytes(image_bytes)
+    except Exception:
         return None
 
-    mime = image_info.get("mime") or ""
-    if not str(mime).startswith("image/"):
-        return None
-
-    image_url = image_info.get("thumburl") or image_info.get("url") or ""
-    source_url = image_info.get("descriptionurl") or ""
-    if not image_url or not source_url:
-        return None
-
-    metadata = image_info.get("extmetadata") or {}
-    object_name = _metadata_text(metadata, "ObjectName")
-    description = _metadata_text(metadata, "ImageDescription")
-    license_short = _metadata_text(metadata, "LicenseShortName")
-    usage_terms = _metadata_text(metadata, "UsageTerms")
-    license_url = _metadata_text(metadata, "LicenseUrl")
-    artist = _metadata_text(metadata, "Artist")
-    date = _metadata_text(metadata, "DateTimeOriginal") or _metadata_text(metadata, "DateTime")
-
-    page_title = _clean_title(str(page.get("title") or ""))
-    title = _clip(object_name or page_title or "Wikimedia Commons reference", 90)
-    caption = _clip(description or title, 180)
-    rights_status = _rights_status(license_short, usage_terms)
-    notes = _notes([
-        f"Credit: {artist}" if artist else "",
-        f"Date: {date}" if date else "",
-        f"License: {license_short or usage_terms}" if license_short or usage_terms else "",
-        f"License URL: {license_url}" if license_url else "",
-    ])
-
+    source_title = candidate.source_title or _domain_label(candidate.source_url)
+    title = _clip(candidate.alt_text or source_title or f"{place_name} reference image", 90)
+    caption = _clip(candidate.alt_text or f"{place_name} reference image from {source_title}", 180)
     return IndigoAtlasImageReference(
         title=title,
         caption=caption,
-        image_url=image_url,
-        source_title=f"Wikimedia Commons · {title}",
-        source_url=source_url,
-        rights_status=rights_status,
-        alt_text=_clip(caption or title, 140),
-        status="sourced",
-        notes=notes or "Fetched from Wikimedia Commons public media repository.",
+        image_url=cached_url,
+        source_title=source_title,
+        source_url=candidate.source_url,
+        rights_status="needs_review",
+        alt_text=caption,
+        status="scraped",
+        notes=(
+            "Scraped and cached from a public web page for internal research reference only. "
+            f"Original image URL: {candidate.image_url}"
+        ),
     )
 
 
-def _metadata_text(metadata: dict, key: str) -> str:
-    value = metadata.get(key, {})
-    if isinstance(value, dict):
-        value = value.get("value", "")
-    return _clean_text(str(value or ""))
+def _download_image_bytes(candidate: PageImageCandidate) -> tuple[bytes, str]:
+    headers = {
+        **REQUEST_HEADERS,
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Referer": candidate.source_url,
+    }
+    chunks: list[bytes] = []
+    total = 0
+    with httpx.stream(
+        "GET",
+        candidate.image_url,
+        headers=headers,
+        timeout=httpx.Timeout(5.0, connect=2.5),
+        follow_redirects=True,
+    ) as response:
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "").lower()
+        if not content_type.startswith("image/"):
+            raise ValueError("not an image response")
+        content_length = int(response.headers.get("content-length") or 0)
+        if content_length > MAX_IMAGE_BYTES:
+            raise ValueError("image too large")
+        for chunk in response.iter_bytes():
+            total += len(chunk)
+            if total > MAX_IMAGE_BYTES:
+                raise ValueError("image too large")
+            chunks.append(chunk)
+    return b"".join(chunks), content_type
+
+
+def _attrs(attrs: list[tuple[str, str | None]]) -> dict[str, str]:
+    return {key.lower(): html.unescape(value or "") for key, value in attrs}
+
+
+def _decode_duckduckgo_link(href: str) -> str:
+    if not href:
+        return ""
+    url = html.unescape(href)
+    if url.startswith("//"):
+        url = f"https:{url}"
+    elif url.startswith("/"):
+        url = urljoin("https://duckduckgo.com", url)
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
+        target = parse_qs(parsed.query).get("uddg", [""])[0]
+        return target
+    return url
+
+
+def _normalize_page_url(raw_url: str) -> str:
+    url = html.unescape(raw_url).strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    if parsed.netloc.endswith("duckduckgo.com"):
+        return ""
+    return url
+
+
+def _normalize_image_url(raw_url: str, page_url: str) -> str:
+    value = html.unescape(raw_url).strip()
+    if not value or value.startswith(("data:", "blob:", "javascript:")):
+        return ""
+    if value.startswith("//"):
+        value = f"https:{value}"
+    url = urljoin(page_url, value)
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    path = parsed.path.lower()
+    if any(path.endswith(extension) for extension in SKIP_IMAGE_EXTENSIONS):
+        return ""
+    if NOISY_IMAGE_RE.search(url):
+        return ""
+    return url
+
+
+def _srcset_best(value: str) -> str:
+    candidates: list[tuple[float, str]] = []
+    for raw_part in value.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        bits = part.split()
+        url = bits[0]
+        score = 1.0
+        if len(bits) > 1:
+            descriptor = bits[1]
+            try:
+                if descriptor.endswith("w"):
+                    score = float(descriptor[:-1])
+                elif descriptor.endswith("x"):
+                    score = float(descriptor[:-1]) * 1000
+            except ValueError:
+                score = 1.0
+        candidates.append((score, url))
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def _domain_label(url: str) -> str:
+    parsed = urlparse(url)
+    return parsed.netloc.removeprefix("www.") or "web source"
 
 
 def _clean_text(value: str) -> str:
@@ -162,27 +391,8 @@ def _clean_text(value: str) -> str:
     return " ".join(text.split())
 
 
-def _clean_title(value: str) -> str:
-    value = value.removeprefix("File:")
-    value = re.sub(r"\.[A-Za-z0-9]{2,5}$", "", value)
-    return _clean_text(value.replace("_", " "))
-
-
 def _clip(value: str, limit: int) -> str:
     value = _clean_text(value)
     if len(value) <= limit:
         return value
     return f"{value[: limit - 1].rstrip()}..."
-
-
-def _rights_status(license_short: str, usage_terms: str) -> str:
-    rights = f"{license_short} {usage_terms}".lower()
-    if "public domain" in rights or rights in {"pd", "cc0"}:
-        return "public_domain"
-    if "cc" in rights or "creative commons" in rights:
-        return "licensed"
-    return "needs_review"
-
-
-def _notes(parts: list[str]) -> str:
-    return " | ".join(part for part in parts if part)
