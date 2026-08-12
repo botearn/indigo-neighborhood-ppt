@@ -6,6 +6,7 @@ import json
 from urllib.parse import quote
 from openai import OpenAI
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 from app.core.config import settings
 from app.core.models import (
     ConversationMessage,
@@ -293,6 +294,16 @@ def _model() -> str:
     return "deepseek-chat" if settings.llm_provider == "deepseek" else "gpt-4o"
 
 
+async def _chat_completion(client: OpenAI, *, messages: list[dict[str, str]], temperature: float):
+    return await run_in_threadpool(
+        client.chat.completions.create,
+        model=_model(),
+        response_format={"type": "json_object"},
+        messages=messages,
+        temperature=temperature,
+    )
+
+
 def _apply_fixed_fields(data: dict) -> dict:
     """Overwrite space_zh and ghost_en with the fixed hotel function mapping."""
     beats = data.get("beats", [])
@@ -487,15 +498,10 @@ async def generate_indigo_research(req: IndigoResearchRequest) -> IndigoResearch
 
     last_err: Exception | None = None
     for attempt in range(2):
-        resp = client.chat.completions.create(
-            model=_model(),
-            response_format={"type": "json_object"},
-            messages=convo,
-            temperature=0.6,
-        )
+        resp = await _chat_completion(client, messages=convo, temperature=0.6)
         raw = resp.choices[0].message.content or ""
         try:
-            return _load_research_json(raw, req.city, req.district, hotel_en)
+            return await run_in_threadpool(_load_research_json, raw, req.city, req.district, hotel_en)
         except (ValidationError, json.JSONDecodeError, ValueError) as e:
             last_err = e
             convo.append({"role": "assistant", "content": raw})
@@ -532,15 +538,10 @@ async def edit_indigo_research(req: IndigoResearchEditRequest) -> IndigoResearch
 
     last_err: Exception | None = None
     for attempt in range(2):
-        resp = client.chat.completions.create(
-            model=_model(),
-            response_format={"type": "json_object"},
-            messages=convo,
-            temperature=0.5,
-        )
+        resp = await _chat_completion(client, messages=convo, temperature=0.5)
         raw = resp.choices[0].message.content or ""
         try:
-            return _load_research_json(raw, research.city, research.district, research.hotel_en)
+            return await run_in_threadpool(_load_research_json, raw, research.city, research.district, research.hotel_en)
         except (ValidationError, json.JSONDecodeError, ValueError) as e:
             last_err = e
             convo.append({"role": "assistant", "content": raw})
@@ -581,15 +582,10 @@ async def generate_indigo(req: IndigoGenerateRequest) -> IndigoStoryUnit:
 
     last_err: Exception | None = None
     for attempt in range(2):
-        resp = client.chat.completions.create(
-            model=_model(),
-            response_format={"type": "json_object"},
-            messages=convo,
-            temperature=0.85,
-        )
+        resp = await _chat_completion(client, messages=convo, temperature=0.85)
         raw = resp.choices[0].message.content or ""
         try:
-            return _load_indigo_json(raw, req.city, req.district, hotel_en)
+            return await run_in_threadpool(_load_indigo_json, raw, req.city, req.district, hotel_en)
         except (ValidationError, json.JSONDecodeError, ValueError) as e:
             last_err = e
             convo.append({"role": "assistant", "content": raw})
@@ -628,20 +624,16 @@ async def edit_indigo(req: IndigoEditRequest) -> IndigoStoryUnit:
 
     last_err: Exception | None = None
     for attempt in range(2):
-        resp = client.chat.completions.create(
-            model=_model(),
-            response_format={"type": "json_object"},
-            messages=convo,
-            temperature=0.55,
-        )
+        resp = await _chat_completion(client, messages=convo, temperature=0.55)
         raw = resp.choices[0].message.content or ""
         try:
-            updated = _load_indigo_json(
+            updated = await run_in_threadpool(
+                _load_indigo_json,
                 raw,
                 story.city,
                 story.district,
                 story.hotel_en,
-                apply_fixed_fields=False,
+                False,
             )
             return _renumber_beats(_preserve_images(story, updated))
         except (ValidationError, json.JSONDecodeError, ValueError) as e:
