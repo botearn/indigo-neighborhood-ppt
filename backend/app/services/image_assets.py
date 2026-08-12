@@ -57,7 +57,11 @@ def persist_image(image_url: str) -> str:
     if "/api/indigo/image-assets/" in image_url:
         return image_url
 
-    image = Image.open(BytesIO(_image_bytes(image_url)))
+    return persist_image_bytes(_image_bytes(image_url))
+
+
+def persist_image_bytes(image_bytes: bytes) -> str:
+    image = Image.open(BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image)
     image.thumbnail(MAX_IMAGE_SIZE, Image.Resampling.LANCZOS)
     if image.mode != "RGB":
