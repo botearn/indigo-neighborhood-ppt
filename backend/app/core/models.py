@@ -142,6 +142,139 @@ class IndigoOrigin(BaseModel):
     body: str      # ~120 chars
 
 
+class IndigoResearchSource(BaseModel):
+    title: str
+    publisher: str = ""
+    url: str = ""
+    medium: str = ""
+    collection: str = ""
+    locator: str = ""
+    usage_note: str = ""
+
+
+class IndigoResearchMediaPlan(BaseModel):
+    medium: str
+    purpose: str
+    target_materials: list[str] = Field(default_factory=list)
+    status: str = "to_search"
+
+
+class IndigoResearchLibraryTarget(BaseModel):
+    name: str
+    kind: str
+    search_focus: str
+    access_path: str = ""
+    status: str = "to_search"
+    notes: str = ""
+
+
+class IndigoResearchSourceRecord(BaseModel):
+    title: str
+    source_type: str
+    institution: str = ""
+    access_path: str = ""
+    locator: str = ""
+    status: str = "to_search"
+    relevance: str = ""
+    linked_findings: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class IndigoResearchAction(BaseModel):
+    label: str
+    instruction: str
+    intent: str = "research"
+    priority: str = "medium"
+
+
+class IndigoResearchFinding(BaseModel):
+    category: str
+    title: str
+    claim: str
+    design_relevance: str
+    evidence_mediums: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    source_status: str = "needs_verification"
+    sources: list[IndigoResearchSource] = Field(default_factory=list)
+
+
+class IndigoAtlasImageReference(BaseModel):
+    title: str = ""
+    caption: str = ""
+    image_url: str = ""
+    source_title: str = ""
+    source_url: str = ""
+    rights_status: str = "reference_only"
+    alt_text: str = ""
+    status: str = "to_source"
+    notes: str = ""
+
+
+class IndigoAtlasPlace(BaseModel):
+    id: str
+    name: str
+    zone: str
+    place_type: str = "cultural_signal"
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    coordinate_status: str = "needs_geocoding"
+    summary: str
+    historical_note: str = ""
+    cultural_note: str = ""
+    design_translation: str
+    source_status: str = "needs_verification"
+    linked_findings: list[str] = Field(default_factory=list)
+    evidence_mediums: list[str] = Field(default_factory=list)
+    sources: list[IndigoResearchSource] = Field(default_factory=list)
+    image_references: list[IndigoAtlasImageReference] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class IndigoAtlasRegion(BaseModel):
+    id: str
+    name: str
+    role: str
+    summary: str
+    boundary_status: str = "interpretive"
+    linked_places: list[str] = Field(default_factory=list)
+    source_status: str = "needs_verification"
+    sources: list[IndigoResearchSource] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+
+
+class IndigoAtlasLayer(BaseModel):
+    key: str
+    label: str
+    medium: str
+    description: str
+    status: str = "to_source"
+    linked_places: list[str] = Field(default_factory=list)
+
+
+class IndigoNeighborhoodAtlas(BaseModel):
+    title: str
+    framing: str
+    coordinate_policy: str
+    regions: list[IndigoAtlasRegion] = Field(default_factory=list)
+    places: list[IndigoAtlasPlace] = Field(default_factory=list)
+    layers: list[IndigoAtlasLayer] = Field(default_factory=list)
+
+
+class IndigoResearchBrief(BaseModel):
+    city: str
+    district: str
+    hotel_en: str
+    summary: str
+    source_policy: str
+    media_plan: list[IndigoResearchMediaPlan] = Field(default_factory=list)
+    library_targets: list[IndigoResearchLibraryTarget] = Field(default_factory=list)
+    source_library: list[IndigoResearchSourceRecord] = Field(default_factory=list)
+    research_actions: list[IndigoResearchAction] = Field(default_factory=list)
+    atlas: Optional[IndigoNeighborhoodAtlas] = None
+    questions: list[str] = Field(default_factory=list)
+    findings: list[IndigoResearchFinding] = Field(default_factory=list)
+
+
 class IndigoBeat(BaseModel):
     num: str           # "01"–"06"
     name_zh: str       # "石·门·迎·耀"  (use · as separator)
@@ -183,6 +316,19 @@ class IndigoGenerateRequest(BaseModel):
     city: str
     district: str
     hotel_en: Optional[str] = None
+    research_brief: Optional[IndigoResearchBrief] = None
+
+
+class IndigoResearchRequest(BaseModel):
+    city: str
+    district: str
+    hotel_en: Optional[str] = None
+
+
+class IndigoResearchEditRequest(BaseModel):
+    research_brief: IndigoResearchBrief
+    instruction: str
+    conversation_history: Optional[list[ConversationMessage]] = None
 
 
 class IndigoEditRequest(BaseModel):

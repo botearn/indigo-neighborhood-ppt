@@ -170,7 +170,7 @@ export function Concierge({
       >
         <div>
           <p className="font-mono text-[10px] tracking-[0.2em] text-[#6b7280] uppercase">
-            Concierge · Step {currentStep} / 5
+            Concierge · Step {currentStep} / 6
           </p>
           <h2 className="text-[22px] font-light text-[#f5f5f0] mt-1 leading-tight tracking-tight">
             {stepLabel}

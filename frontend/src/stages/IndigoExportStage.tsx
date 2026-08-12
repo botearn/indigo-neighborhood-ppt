@@ -14,7 +14,7 @@ export function IndigoExportStage({ story, exporting, exportedAt, onExport, onBa
       <div className="max-w-[760px] mx-auto px-12 py-14">
         <div className="mb-10">
           <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280] mb-2">
-            Storyline · Step 5
+            Storyline · Step 6
           </p>
           <h1 className="text-[34px] font-light text-[#f5f5f0] leading-tight">导出</h1>
           <p className="italic font-light text-[14px] text-[#6b7280] mt-2">

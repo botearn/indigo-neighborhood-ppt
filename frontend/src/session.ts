@@ -1,13 +1,14 @@
 import type { GeoResult } from './MapPicker'
 import type { ConciergeMessage } from './Concierge'
-import type { IndigoStoryUnit } from './indigo_types'
+import type { IndigoResearchBrief, IndigoStoryUnit } from './indigo_types'
 
-const STORAGE_KEY = 'indigo.session.v2'
+const STORAGE_KEY = 'indigo.session.v4'
 const FAST_STORAGE_KEY = 'indigo.fast-session.v1'
 
 export type PersistedState = {
   step: number
   candidate: GeoResult | null
+  research: IndigoResearchBrief | null
   story: IndigoStoryUnit | null
   messages: ConciergeMessage[]
 }
@@ -17,6 +18,7 @@ type SerializedMessage = Omit<ConciergeMessage, 'action'>
 type SerializedState = {
   step: number
   candidate: GeoResult | null
+  research: IndigoResearchBrief | null
   story: IndigoStoryUnit | null
   messages: SerializedMessage[]
 }
@@ -42,6 +44,7 @@ export function loadState(): PersistedState | null {
     return {
       step: parsed.step ?? 1,
       candidate: parsed.candidate ?? null,
+      research: parsed.research ?? null,
       story: parsed.story ?? null,
       messages: (parsed.messages ?? []).map(m => ({ ...m })),
     }
@@ -55,6 +58,7 @@ export function saveState(s: PersistedState): void {
     const serialized: SerializedState = {
       step: s.step,
       candidate: s.candidate,
+      research: s.research,
       story: s.story ? compactStory(s.story) : null,
       messages: s.messages.map(({ action: _action, ...rest }) => rest),
     }

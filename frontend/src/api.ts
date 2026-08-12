@@ -1,5 +1,5 @@
 import type { StoryUnit } from './types'
-import type { IndigoStoryUnit } from './indigo_types'
+import type { IndigoResearchBrief, IndigoStoryUnit } from './indigo_types'
 import type { ConciergeMessage } from './Concierge'
 import type { GeoResult } from './MapPicker'
 
@@ -319,11 +319,44 @@ export async function generateIndigoText(
   city: string,
   district: string,
   hotelEn?: string,
+  researchBrief?: IndigoResearchBrief | null,
 ): Promise<IndigoStoryUnit> {
   const res = await apiFetch('/indigo/generate-text', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ city, district, hotel_en: hotelEn, research_brief: researchBrief ?? undefined }),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function generateIndigoResearch(
+  city: string,
+  district: string,
+  hotelEn?: string,
+): Promise<IndigoResearchBrief> {
+  const res = await apiFetch('/indigo/research', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ city, district, hotel_en: hotelEn }),
+  })
+  await ensureOk(res)
+  return res.json()
+}
+
+export async function editIndigoResearch(
+  researchBrief: IndigoResearchBrief,
+  instruction: string,
+  history?: ConciergeMessage[],
+): Promise<IndigoResearchBrief> {
+  const res = await apiFetch('/indigo/research/edit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      research_brief: researchBrief,
+      instruction,
+      conversation_history: toHistory(history),
+    }),
   })
   await ensureOk(res)
   return res.json()

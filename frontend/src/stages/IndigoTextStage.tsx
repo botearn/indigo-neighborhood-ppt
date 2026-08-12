@@ -13,7 +13,7 @@ export function IndigoTextStage({ story, loading, pendingLocation, onNext }: Pro
       <div className="max-w-[860px] mx-auto px-12 py-14">
         <div className="mb-10">
           <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-[#6b7280] mb-2">
-            Storyline · Step 2
+            Storyline · Step 3
           </p>
           <h1 className="text-[34px] font-light text-[#f5f5f0] leading-tight">
             {loading ? 'Composing the Indigo storyline…' : '确定文字'}

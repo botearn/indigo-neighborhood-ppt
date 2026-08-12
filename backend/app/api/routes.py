@@ -17,6 +17,9 @@ from app.core.models import (
     IndigoEditRequest,
     IndigoImageJobRequest,
     IndigoImageJobResponse,
+    IndigoResearchBrief,
+    IndigoResearchEditRequest,
+    IndigoResearchRequest,
     IndigoSingleImageRequest,
     IndigoStoryUnit,
 )
@@ -80,6 +83,22 @@ async def indigo_generate_text(req: IndigoGenerateRequest, user: AuthUser = Depe
         return story
     except Exception as e:
         import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/research", response_model=IndigoResearchBrief)
+async def indigo_research(req: IndigoResearchRequest, user: AuthUser = Depends(require_user)):
+    try:
+        return await indigo_generator.generate_indigo_research(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/indigo/research/edit", response_model=IndigoResearchBrief)
+async def indigo_research_edit(req: IndigoResearchEditRequest, user: AuthUser = Depends(require_user)):
+    try:
+        return await indigo_generator.edit_indigo_research(req)
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
